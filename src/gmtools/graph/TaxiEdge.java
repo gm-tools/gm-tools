@@ -17,7 +17,7 @@ public class TaxiEdge extends DefaultWeightedEdge implements Comparable<TaxiEdge
 	private static final long serialVersionUID = -6912691060638551129L;
 	private static int SEQ_NO = 0;
 	
-	public enum Type { TAXIWAY, STAND_CONNECTION, /**actually a runway, not for taxiing!*/RUNWAY }
+	public enum EdgeType { TAXIWAY, STAND_CONNECTION, /**actually a runway, not for taxiing!*/RUNWAY }
 	
 	private String id;
 	private Taxiway taxiway;
@@ -26,17 +26,17 @@ public class TaxiEdge extends DefaultWeightedEdge implements Comparable<TaxiEdge
 	private TaxiNode tnTo;
 	private double[] traversalTimes;
 	private int seqNo;
-	private Type type;
+	private EdgeType edgeType;
 	private String meta; // runway name if it applies
 	
-	public TaxiEdge(String id, Taxiway taxiway, TaxiNode tnFrom, TaxiNode tnTo, double length, Type type) {
+	public TaxiEdge(String id, Taxiway taxiway, TaxiNode tnFrom, TaxiNode tnTo, double length, EdgeType type) {
 		this.id = id;
 		this.seqNo = SEQ_NO++;
 		this.taxiway = taxiway;
 		this.length = length;
 		this.tnFrom = tnFrom;
 		this.tnTo = tnTo;
-		this.type = type;
+		this.edgeType = type;
 		this.meta = "";
 	}
 	
@@ -68,17 +68,17 @@ public class TaxiEdge extends DefaultWeightedEdge implements Comparable<TaxiEdge
 		return tnTo;
 	}
 	
-	public Type getType() {
-		return type;
+	public EdgeType getEdgeType() {
+		return edgeType;
 	}
 	
 	public boolean shouldHaveIntermediatesAdded() {
-		return this.type == Type.TAXIWAY;
+		return this.edgeType == EdgeType.TAXIWAY;
 	}
 	
 	/**@return a string to uniquely identify this edge - it will at least incorporate the seqNo which is unique per TaxiEdge object*/
 	public String getUniqueString() {
-		return "SN" + seqNo + ((taxiway != null) ? "-TW[" + this.taxiway.getName() + "]" : "") + ((meta != null) ? "-(" + meta + ")" : "");
+		return "SN" + seqNo + ((taxiway != null) ? "-TW[" + this.taxiway.getName() + "]" : "") + ((meta != null) && (!meta.isEmpty()) ? "-(" + meta + ")" : "");
 	}
 	
 	public double[] getMidpoint() {
@@ -109,7 +109,7 @@ public class TaxiEdge extends DefaultWeightedEdge implements Comparable<TaxiEdge
 	
 	/**@return null if not a stand edge*/
 	public String getStandName() {
-		if (this.type == Type.STAND_CONNECTION) {
+		if (this.edgeType == EdgeType.STAND_CONNECTION) {
 			// name should be in "meta" - but if not, look at the nodes too as they may have it instead
 			if (this.meta != null) {
 				return this.meta;
@@ -127,7 +127,7 @@ public class TaxiEdge extends DefaultWeightedEdge implements Comparable<TaxiEdge
 
 	@Override
 	public String toString() {
-		return "Edge[" + getUniqueString() + "-ID" + this.id + "-" + this.type + " " + this.tnFrom + ">" + this.tnTo + "]";
+		return "Edge[" + getUniqueString() + "-ID" + this.id + "-" + this.edgeType + " " + this.tnFrom + ">" + this.tnTo + "]";
 	}
 
 	@Override
@@ -135,14 +135,14 @@ public class TaxiEdge extends DefaultWeightedEdge implements Comparable<TaxiEdge
 		return this.seqNo - that.seqNo;
 	}
 	
-	public static Type gmSpecificationToType(GroundMovementWriter.Edge.Specification spec) {
+	public static EdgeType gmSpecificationToType(GroundMovementWriter.Edge.Specification spec) {
 		switch (spec) {
 		case gate:
-			return Type.STAND_CONNECTION;
+			return EdgeType.STAND_CONNECTION;
 		case runway:
-			return Type.RUNWAY;
+			return EdgeType.RUNWAY;
 		case taxiway:
-			return Type.TAXIWAY;
+			return EdgeType.TAXIWAY;
 		default: //runwaytaxiway, other
 			return null;
 		}

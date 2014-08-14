@@ -1,6 +1,7 @@
 package gmtools.tools;
 
 import gmtools.common.GroundMovementWriter;
+import gmtools.common.KMLUtils;
 import gmtools.common.Legal;
 import gmtools.common.Maths;
 import gmtools.graph.TaxiEdge;
@@ -94,11 +95,10 @@ public class TaxiGen {
 	/**
 	 * usage: TaxiGen OSMInputFile GMOutputFile [options]
 	 * OSMInputFile: the xml extracted from Open Street Map
-	 * StandsInputFile: tab separated file; each line has either stand name only (if OSM contains edges for stands), or standName Lat Lon Terminal TaxiwayName [SpecificNodeToAttachTo]
 	 * GMOutputFile: filename to write output to
 	 * 
 	 * options:
-	 * -stands=filename.txt : a filename containing details of stands to add to the OSM taxiways
+	 * -stands=filename.txt : a filename containing details of stands to add to the OSM taxiways; tab separated file; each line has either stand name only (if OSM contains edges for stands), or standName Lat Lon Terminal TaxiwayName [SpecificNodeToAttachTo]
 	 * -angles=filename.txt : a filename to write out angles between edges
 	 * -kml=filename.kml : a filename to write out KML for the taxiways for use in Google Earth
 	 * -spacing==n : number of metres between intermediate nodes on long taxiway edges (default=50); make negative to disable 
@@ -106,6 +106,8 @@ public class TaxiGen {
 	 * -rw=y/n : include runways in outputs? y/n (default = y)
 	 */
 	public static void main(String[] args) {
+		args = "export/MAN_OSMStands-with23LStartAsTaxiways.osm export/MAN_OSM_GM.txt -stands=export/MANStands_osm.txt -kml=export/MAN_OSM.kml -angles=export/MAN_OSM_Angles.txt".split("\\s+");
+		
 		Legal.printLicence("TaxiGen");
 		if (args.length < 2) {
 			printUsage();
@@ -324,7 +326,7 @@ public class TaxiGen {
 			}
 		}
 		for (TaxiEdge te : allEdges) {
-			if (te.getType() != TaxiEdge.Type.RUNWAY) {
+			if (te.getEdgeType() != TaxiEdge.EdgeType.RUNWAY) {
 				graphTaxiways.addEdge(te.getTnFrom(), te.getTnTo(), te);
 				graphTaxiways.setEdgeWeight(te, te.getLength());
 				allTaxiEdges.add(te);
@@ -527,7 +529,7 @@ public class TaxiGen {
 			System.out.println("Couldn't find node to attach to! Stand " + tnFrom + " toAttachTo " + tnFrom.getNodeAttachment());
 		} else {
 			// an edge to connect to the stand
-			TaxiEdge teS = new TaxiEdge("ES" + tnFrom.getId() + "-" + taxiways.get(0).getName(), taxiways.get(0), tnFrom, toAttachTo, distance(tnFrom, toAttachTo), TaxiEdge.Type.STAND_CONNECTION);
+			TaxiEdge teS = new TaxiEdge("ES" + tnFrom.getId() + "-" + taxiways.get(0).getName(), taxiways.get(0), tnFrom, toAttachTo, distance(tnFrom, toAttachTo), TaxiEdge.EdgeType.STAND_CONNECTION);
 			edgeSet.add(teS);
 			return;
 		}
@@ -617,13 +619,13 @@ public class TaxiGen {
 			}
 			
 			// an edge to connect to the stand
-			TaxiEdge teS = new TaxiEdge("ES" + tnFrom.getId() + "-" + taxiways.get(i).getName(), taxiways.get(i), tnFrom, tn, minDistances[i], TaxiEdge.Type.STAND_CONNECTION);
+			TaxiEdge teS = new TaxiEdge("ES" + tnFrom.getId() + "-" + taxiways.get(i).getName(), taxiways.get(i), tnFrom, tn, minDistances[i], TaxiEdge.EdgeType.STAND_CONNECTION);
 			edgeSet.add(teS);
 			
 			// two new edges to join to the new edge, if we're meant to be replacing the edge
 			if (edgesToReplace[i] != null) {
-				TaxiEdge te1 = new TaxiEdge(edgesToReplace[i].getId(), taxiways.get(i), edgesToReplace[i].getTnFrom(), tn, distance(edgesToReplace[i].getTnFrom(), tn), TaxiEdge.Type.TAXIWAY);
-				TaxiEdge te2 = new TaxiEdge(edgesToReplace[i].getId(), taxiways.get(i), tn, edgesToReplace[i].getTnTo(), distance(tn, edgesToReplace[i].getTnTo()), TaxiEdge.Type.TAXIWAY);
+				TaxiEdge te1 = new TaxiEdge(edgesToReplace[i].getId(), taxiways.get(i), edgesToReplace[i].getTnFrom(), tn, distance(edgesToReplace[i].getTnFrom(), tn), TaxiEdge.EdgeType.TAXIWAY);
+				TaxiEdge te2 = new TaxiEdge(edgesToReplace[i].getId(), taxiways.get(i), tn, edgesToReplace[i].getTnTo(), distance(tn, edgesToReplace[i].getTnTo()), TaxiEdge.EdgeType.TAXIWAY);
 	
 				edgeSet.remove(edgesToReplace[i]);
 				edgeSet.add(te1);
@@ -715,7 +717,7 @@ public class TaxiGen {
 			List<AeroWay> a = m.get(key);
 			for (int i = 0; i < a.size(); i++) {
 				AeroWay w = a.get(i);
-				if (w.type == Type.TAXIWAY) {
+				if ((w.type == Type.TAXIWAY) && (!specifiedStandNames.contains(w.name))) { // only count taxiways if they're not listed as being stands
 					numTaxiways++;
 				} else if (w.type == Type.RUNWAY) {
 					runwayNames += ((numRunways==0)?"":",")+w.name;
@@ -786,9 +788,9 @@ public class TaxiGen {
 					if (tnFrom != null && tnTo != null) { // if either is null, that's a node we didn't want to include (maybe it was runway only), so don't bother adding an adge to it
 						double length = distance(tnFrom, tnTo);
 						
-						TaxiEdge te = new TaxiEdge("E" + w.way.getId(), tw, tnFrom, tnTo, length, (stand ? TaxiEdge.Type.STAND_CONNECTION : (w.type==Type.TAXIWAY ? TaxiEdge.Type.TAXIWAY : TaxiEdge.Type.RUNWAY)));
+						TaxiEdge te = new TaxiEdge("E" + w.way.getId(), tw, tnFrom, tnTo, length, (stand ? TaxiEdge.EdgeType.STAND_CONNECTION : (w.type==Type.TAXIWAY ? TaxiEdge.EdgeType.TAXIWAY : TaxiEdge.EdgeType.RUNWAY)));
 						
-						if (te.getType() == TaxiEdge.Type.RUNWAY) {
+						if (te.getEdgeType() == TaxiEdge.EdgeType.RUNWAY) {
 							te.setMeta(w.name);
 						}
 						
@@ -845,14 +847,14 @@ public class TaxiGen {
 
 				    		// create edges for the intermediate nodes
 				    		if (i == 0) {
-				    			toAdd.add(new TaxiEdge(te.getId(), tw, te.getTnFrom(), intermediateNodes[i], distance(te.getTnFrom(), intermediateNodes[i]), TaxiEdge.Type.TAXIWAY));
+				    			toAdd.add(new TaxiEdge(te.getId(), tw, te.getTnFrom(), intermediateNodes[i], distance(te.getTnFrom(), intermediateNodes[i]), TaxiEdge.EdgeType.TAXIWAY));
 				    		} else {
-				    			toAdd.add(new TaxiEdge(te.getId(), tw, intermediateNodes[i - 1], intermediateNodes[i], distance(intermediateNodes[i - 1], intermediateNodes[i]), TaxiEdge.Type.TAXIWAY));
+				    			toAdd.add(new TaxiEdge(te.getId(), tw, intermediateNodes[i - 1], intermediateNodes[i], distance(intermediateNodes[i - 1], intermediateNodes[i]), TaxiEdge.EdgeType.TAXIWAY));
 				    		}
 				    		
 				    		// add an edge for the last node too
 				    		if (i == intermediateNodes.length - 1) {
-			    				toAdd.add(new TaxiEdge(te.getId(), tw, intermediateNodes[i], te.getTnTo(), distance(intermediateNodes[i], te.getTnTo()), TaxiEdge.Type.TAXIWAY));
+			    				toAdd.add(new TaxiEdge(te.getId(), tw, intermediateNodes[i], te.getTnTo(), distance(intermediateNodes[i], te.getTnTo()), TaxiEdge.EdgeType.TAXIWAY));
 			    			}
 				    		
 				    		currentX += increment;
@@ -966,9 +968,9 @@ public class TaxiGen {
 
 		for (TaxiEdge te : edges) {
 			String style = "#linestyle";
-			if (te.getType() == TaxiEdge.Type.TAXIWAY) {
+			if (te.getEdgeType() == TaxiEdge.EdgeType.TAXIWAY) {
 				style += "Taxiway";
-			} else if (te.getType() == TaxiEdge.Type.STAND_CONNECTION) {
+			} else if (te.getEdgeType() == TaxiEdge.EdgeType.STAND_CONNECTION) {
 				style += "TaxiwayToGate";
 			} else {
 				style += "Runway";
@@ -986,6 +988,8 @@ public class TaxiGen {
 			Placemark p = documentNodes.createAndAddPlacemark().withName(tn.getId() + meta).withStyleUrl("#placemarkStyleGates");
 			p.createAndSetPoint().addToCoordinates(tn.getLonCoordinate(), tn.getLatCoordinate());
 		}
+		
+		KMLUtils.addGroundOverlayToKMLDocument(filename, document);
 		
 		try {
 			kml.marshal(new File(filename));
@@ -1021,9 +1025,9 @@ public class TaxiGen {
 			int startNode = nodeIDs.get(te.getTnFrom());
 			int endNode = nodeIDs.get(te.getTnTo());
 			GroundMovementWriter.Edge.Specification spec;
-			if (te.getType() == TaxiEdge.Type.RUNWAY) {
+			if (te.getEdgeType() == TaxiEdge.EdgeType.RUNWAY) {
 				spec = GroundMovementWriter.Edge.Specification.runway;
-			} else if (te.getType() == TaxiEdge.Type.STAND_CONNECTION) {
+			} else if (te.getEdgeType() == TaxiEdge.EdgeType.STAND_CONNECTION) {
 				spec = GroundMovementWriter.Edge.Specification.gate;
 			} else { // assume a taxiway
 				spec = GroundMovementWriter.Edge.Specification.taxiway;
@@ -1134,7 +1138,7 @@ public class TaxiGen {
 		Map<String, Runway> runways = new TreeMap<String, Runway>();
 		
 		for (TaxiEdge te : edges) {
-			if (te.getType() == TaxiEdge.Type.RUNWAY) {
+			if (te.getEdgeType() == TaxiEdge.EdgeType.RUNWAY) {
 				String name = te.getMeta();
 				
 				if ((name != null) && !name.isEmpty()) {

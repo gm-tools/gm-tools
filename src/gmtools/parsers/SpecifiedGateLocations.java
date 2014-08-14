@@ -25,9 +25,9 @@ public class SpecifiedGateLocations {
 			String line;
 			while ((line = in.readLine()) != null) {
 				String[] cols = line.split("\t");
+				String label = cols[0];
 				
-				if (cols.length >= 3) {
-					String label = cols[0];
+				if (cols.length >= 3) { // name, lat, lon
 					String location = cols[2];
 					String[] strCoords = cols[1].split(" ");
 					double[] dblCoords = Geography.latLonToDecimal(strCoords[0].trim(), strCoords[1].trim());
@@ -44,6 +44,9 @@ public class SpecifiedGateLocations {
 							s.nodeAttachment = cols[4];
 						}
 					}
+				} else { // just use the name
+					Stand s = new Stand(label);
+					stands.add(s);
 				}
 			}
 			
@@ -77,9 +80,9 @@ public class SpecifiedGateLocations {
 			this.nodeAttachment = null;
 		}
 		
-		public Stand(String name, String location) {
+		public Stand(String name) {
 			this.name = name;
-			this.location = location;
+			this.location = null;
 			this.lat = Double.NaN;
 			this.lon = Double.NaN;
 			this.hasCoords = false;
