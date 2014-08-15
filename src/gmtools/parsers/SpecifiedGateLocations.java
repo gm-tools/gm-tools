@@ -10,25 +10,43 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * copyright (c) 2014 Alexander E.I. Brownlee
+ * copyright (c) 2014 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
  * Released under the MIT Licence http://opensource.org/licenses/MIT
  * Instructions, citation information, licencing and source
  * are available at https://github.com/gm-tools/gm-tools/
  */
 public class SpecifiedGateLocations {
+	private static final String HEADER_STAND = "stand";
+	private static final String HEADER_LAT = "lat";
+	private static final String HEADER_LON = "lon";
+	private static final String HEADER_TAXIWAY = "taxiways";
+	private static final String HEADER_TERMINAL = "terminal";
+	private static final String HEADER_ATTACHMENT = "attachment";
+	
+	private static final String SEPARATOR = "\t";
+	private static final String SEPARATOR_TAXIWAYS = ",";
+	
 	public static Set<Stand> loadStandsFromFile(String filename) {
 		Set<Stand> stands = new TreeSet<Stand>();
 		
 		try {
 			BufferedReader in = new BufferedReader(new FileReader(filename));
-			in.readLine(); // skip header
+			
+			String[] header = in.readLine().split(SEPARATOR);
+			ColumnIndices columnIndices = new ColumnIndices(header, filename);
+			
 			String line;
 			while ((line = in.readLine()) != null) {
-				String[] cols = line.split("\t");
-				String label = cols[0];
+				String[] cols = line.split(SEPARATOR);
+				String label = cols[columnIndices.getColumnIndex(HEADER_STAND, true)];
+				Integer latIndex = columnIndices.getColumnIndex(HEADER_LAT, false);
+				Integer lonIndex = columnIndices.getColumnIndex(HEADER_LON, false);
+				Integer locationIndex = columnIndices.getColumnIndex(HEADER_TERMINAL, false);
+				Integer taxiwayIndex = columnIndices.getColumnIndex(HEADER_TAXIWAY, false);
+				Integer attachmentIndex = columnIndices.getColumnIndex(HEADER_ATTACHMENT, false);
 				
-				if (cols.length >= 3) { // name, lat, lon
-					String location = cols[2];
+				if ((latIndex != null) && (lonIndex != null) && (cols.length > Math.max(latIndex, lonIndex))) { // at least name, lat, lon
+					String location = ((locationIndex != null) && (cols.length < locationIndex)) ? cols[locationIndex] : null;
 					String[] strCoords = cols[1].split(" ");
 					double[] dblCoords = Geography.latLonToDecimal(strCoords[0].trim(), strCoords[1].trim());
 
@@ -36,13 +54,13 @@ public class SpecifiedGateLocations {
 					Stand s = new Stand(label, location, dblCoords[0], dblCoords[1]);
 					stands.add(s);
 					
-					if (cols.length >= 4) {
-						String[] taxiways = cols[3].split(",");
+					if ((taxiwayIndex != null) && (cols.length < taxiwayIndex)) {
+						String[] taxiways = cols[taxiwayIndex].split(SEPARATOR_TAXIWAYS);
 						s.associatedTaxiways = taxiways;
-						
-						if (cols.length >= 5) { // specific node to attach to identified
-							s.nodeAttachment = cols[4];
-						}
+					}
+					
+					if ((attachmentIndex != null) && (cols.length < attachmentIndex)) {
+						s.nodeAttachment = cols[attachmentIndex];
 					}
 				} else { // just use the name
 					Stand s = new Stand(label);

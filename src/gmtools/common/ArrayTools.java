@@ -1,7 +1,7 @@
 package gmtools.common;
 
 /**
- * copyright (c) 2014 Alexander E.I. Brownlee
+ * copyright (c) 2014 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
  * Released under the MIT Licence http://opensource.org/licenses/MIT
  * Instructions, citation information, licencing and source
  * are available at https://github.com/gm-tools/gm-tools/
@@ -111,6 +111,22 @@ public class ArrayTools {
 		StringBuffer rval = new StringBuffer();
 		for (int i = 0; i < array.length; i++)
 			rval.append(array[i]);
+		return rval.toString();
+	}
+	
+	public static String toString(Object[] array, String separator) {
+		StringBuffer rval = new StringBuffer();
+
+		boolean first = true;
+		for (int i = 0; i < array.length; i++) {
+			if (!first) {
+				rval.append(separator);
+			}
+
+			rval.append(array[i]);
+			first = false;
+		}
+
 		return rval.toString();
 	}
 }

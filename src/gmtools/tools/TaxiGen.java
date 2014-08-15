@@ -1,9 +1,12 @@
 package gmtools.tools;
 
+import gmtools.common.Geography;
 import gmtools.common.GroundMovementWriter;
 import gmtools.common.KMLUtils;
 import gmtools.common.Legal;
-import gmtools.common.Maths;
+import gmtools.graph.GraphManipulation;
+import gmtools.graph.Runway;
+import gmtools.graph.Stands;
 import gmtools.graph.TaxiEdge;
 import gmtools.graph.TaxiNode;
 import gmtools.graph.TaxiNode.NodeType;
@@ -11,8 +14,6 @@ import gmtools.graph.Taxiway;
 import gmtools.parsers.ParseOSM;
 import gmtools.parsers.ParseOSM.AeroWay;
 import gmtools.parsers.ParseOSM.AeroWay.Type;
-import gmtools.parsers.SpecifiedGateLocations;
-import gmtools.parsers.SpecifiedGateLocations.Stand;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -21,7 +22,6 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +45,7 @@ import de.micromata.opengis.kml.v_2_2_0.Placemark;
 import de.micromata.opengis.kml.v_2_2_0.Style;
 
 /**
- * copyright (c) 2014 Alexander E.I. Brownlee
+ * copyright (c) 2014 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
  * Released under the MIT Licence http://opensource.org/licenses/MIT
  * Instructions, citation information, licencing and source
  * are available at https://github.com/gm-tools/gm-tools/
@@ -54,8 +54,6 @@ import de.micromata.opengis.kml.v_2_2_0.Style;
  * This class will take OSM data and specified gate locations and generate a graph representation that is about right
  */
 public class TaxiGen {
-	private static final double DISTANCE_THRESHOLD_FOR_ZERO_M = 0.1; // equal LatLng value can return distances that are non-zero
-
 	/**how far from an existing node on an edge should we be before making a new one?*/
 	private double thresholdForSnapToNode;
 	
@@ -274,7 +272,7 @@ public class TaxiGen {
 		Set<TaxiNode> intermediateNodes = new TreeSet<TaxiNode>(); // the set of any extra nodes added to the OSM data to break up long edges
 		addIntermediateNodesToTaxiwayEdges(taxiways, allEdges, intermediateNodes);
 		
-		this.runways = locateRunways(allEdges);
+		this.runways = GraphManipulation.locateRunways(allEdges);
 		
 		// now add those nodes and edges to appropriate stores
 		this.graphWholeAirport = new WeightedMultigraph<TaxiNode,TaxiEdge>(TaxiEdge.class);
@@ -407,7 +405,7 @@ public class TaxiGen {
 			this.gmwIDsForTaxiEdges.put(te, e.getSeqNo());
 		}
 		
-		this.runways = locateRunways(allEdges);
+		this.runways = GraphManipulation.locateRunways(allEdges);
 		
 		// now add those nodes and edges to appropriate stores
 		this.graphWholeAirport = new WeightedMultigraph<TaxiNode,TaxiEdge>(TaxiEdge.class);
@@ -481,7 +479,7 @@ public class TaxiGen {
 				for (TaxiEdge te1 : edges) {
 					for (TaxiEdge te2 : edges) {
 						if (te1 != te2) {
-							double angle = angleBetweenEdges(te1, te2);
+							double angle = Geography.angleBetweenEdges(te1, te2);
 							
 							// get nodes at opposite ends of the edges
 							TaxiNode tn1 = (te1.getTnFrom() == tn) ? te1.getTnTo() : te1.getTnFrom();
@@ -529,7 +527,7 @@ public class TaxiGen {
 			System.out.println("Couldn't find node to attach to! Stand " + tnFrom + " toAttachTo " + tnFrom.getNodeAttachment());
 		} else {
 			// an edge to connect to the stand
-			TaxiEdge teS = new TaxiEdge("ES" + tnFrom.getId() + "-" + taxiways.get(0).getName(), taxiways.get(0), tnFrom, toAttachTo, distance(tnFrom, toAttachTo), TaxiEdge.EdgeType.STAND_CONNECTION);
+			TaxiEdge teS = new TaxiEdge("ES" + tnFrom.getId() + "-" + taxiways.get(0).getName(), taxiways.get(0), tnFrom, toAttachTo, Geography.distance(tnFrom, toAttachTo), TaxiEdge.EdgeType.STAND_CONNECTION);
 			edgeSet.add(teS);
 			return;
 		}
@@ -561,8 +559,8 @@ public class TaxiGen {
 				TaxiNode nodeToUse = null;
 				if (beyondEndOfEdge) {
 					// which node is closest?
-					double distance1 = distance(tnFrom, te.getTnFrom());
-					double distance2 = distance(tnFrom, te.getTnTo());
+					double distance1 = Geography.distance(tnFrom, te.getTnFrom());
+					double distance2 = Geography.distance(tnFrom, te.getTnTo());
 					if (distance1 < distance2) {
 						nodeToUse = te.getTnFrom();
 						distance = distance1;
@@ -573,19 +571,19 @@ public class TaxiGen {
 				} else {
 					// If on an edge, before we commit to checking whether to add a new node (breaking the edge in two), see if the end of the edge is pretty close.
 					// If it is, just connect to that.
-					double distanceFromPointToNode1 = distance(te.getTnFrom().getLatCoordinate(), te.getTnFrom().getLonCoordinate(), coords[0], coords[1]);
-					double distanceFromPointToNode2 = distance(te.getTnTo().getLatCoordinate(), te.getTnTo().getLonCoordinate(), coords[0], coords[1]);
+					double distanceFromPointToNode1 = Geography.distance(te.getTnFrom().getLatCoordinate(), te.getTnFrom().getLonCoordinate(), coords[0], coords[1]);
+					double distanceFromPointToNode2 = Geography.distance(te.getTnTo().getLatCoordinate(), te.getTnTo().getLonCoordinate(), coords[0], coords[1]);
 					
 					if (distanceFromPointToNode1 < thresholdForSnapToNode) {
-						distance = distance(tnFrom, te.getTnFrom());
+						distance = Geography.distance(tnFrom, te.getTnFrom());
 						nodeToUse = te.getTnFrom();
 						beyondEndOfEdge = true; // set this so we'll use the node rather than the edge
 					} else if (distanceFromPointToNode2 < thresholdForSnapToNode) {
-						distance = distance(tnFrom, te.getTnTo());
+						distance = Geography.distance(tnFrom, te.getTnTo());
 						nodeToUse = te.getTnTo();
 						beyondEndOfEdge = true; // set this so we'll use the node rather than the edge
 					} else {
-						distance = distance(tnFrom.getLatCoordinate(), tnFrom.getLonCoordinate(), coords[0], coords[1]);
+						distance = Geography.distance(tnFrom.getLatCoordinate(), tnFrom.getLonCoordinate(), coords[0], coords[1]);
 					}
 				}
 						
@@ -624,8 +622,8 @@ public class TaxiGen {
 			
 			// two new edges to join to the new edge, if we're meant to be replacing the edge
 			if (edgesToReplace[i] != null) {
-				TaxiEdge te1 = new TaxiEdge(edgesToReplace[i].getId(), taxiways.get(i), edgesToReplace[i].getTnFrom(), tn, distance(edgesToReplace[i].getTnFrom(), tn), TaxiEdge.EdgeType.TAXIWAY);
-				TaxiEdge te2 = new TaxiEdge(edgesToReplace[i].getId(), taxiways.get(i), tn, edgesToReplace[i].getTnTo(), distance(tn, edgesToReplace[i].getTnTo()), TaxiEdge.EdgeType.TAXIWAY);
+				TaxiEdge te1 = new TaxiEdge(edgesToReplace[i].getId(), taxiways.get(i), edgesToReplace[i].getTnFrom(), tn, Geography.distance(edgesToReplace[i].getTnFrom(), tn), TaxiEdge.EdgeType.TAXIWAY);
+				TaxiEdge te2 = new TaxiEdge(edgesToReplace[i].getId(), taxiways.get(i), tn, edgesToReplace[i].getTnTo(), Geography.distance(tn, edgesToReplace[i].getTnTo()), TaxiEdge.EdgeType.TAXIWAY);
 	
 				edgeSet.remove(edgesToReplace[i]);
 				edgeSet.add(te1);
@@ -786,7 +784,7 @@ public class TaxiGen {
 					TaxiNode tnTo = nodeStore.get("N" + l.get(i + 1).getNodeId()); // for info only: for stands/parking_positions, the latter node will always be the stand node (NB - sometimes stands are curved, so there are >1 edges in them; only really interested in the last one) 
 					
 					if (tnFrom != null && tnTo != null) { // if either is null, that's a node we didn't want to include (maybe it was runway only), so don't bother adding an adge to it
-						double length = distance(tnFrom, tnTo);
+						double length = Geography.distance(tnFrom, tnTo);
 						
 						TaxiEdge te = new TaxiEdge("E" + w.way.getId(), tw, tnFrom, tnTo, length, (stand ? TaxiEdge.EdgeType.STAND_CONNECTION : (w.type==Type.TAXIWAY ? TaxiEdge.EdgeType.TAXIWAY : TaxiEdge.EdgeType.RUNWAY)));
 						
@@ -847,14 +845,14 @@ public class TaxiGen {
 
 				    		// create edges for the intermediate nodes
 				    		if (i == 0) {
-				    			toAdd.add(new TaxiEdge(te.getId(), tw, te.getTnFrom(), intermediateNodes[i], distance(te.getTnFrom(), intermediateNodes[i]), TaxiEdge.EdgeType.TAXIWAY));
+				    			toAdd.add(new TaxiEdge(te.getId(), tw, te.getTnFrom(), intermediateNodes[i], Geography.distance(te.getTnFrom(), intermediateNodes[i]), TaxiEdge.EdgeType.TAXIWAY));
 				    		} else {
-				    			toAdd.add(new TaxiEdge(te.getId(), tw, intermediateNodes[i - 1], intermediateNodes[i], distance(intermediateNodes[i - 1], intermediateNodes[i]), TaxiEdge.EdgeType.TAXIWAY));
+				    			toAdd.add(new TaxiEdge(te.getId(), tw, intermediateNodes[i - 1], intermediateNodes[i], Geography.distance(intermediateNodes[i - 1], intermediateNodes[i]), TaxiEdge.EdgeType.TAXIWAY));
 				    		}
 				    		
 				    		// add an edge for the last node too
 				    		if (i == intermediateNodes.length - 1) {
-			    				toAdd.add(new TaxiEdge(te.getId(), tw, intermediateNodes[i], te.getTnTo(), distance(intermediateNodes[i], te.getTnTo()), TaxiEdge.EdgeType.TAXIWAY));
+			    				toAdd.add(new TaxiEdge(te.getId(), tw, intermediateNodes[i], te.getTnTo(), Geography.distance(intermediateNodes[i], te.getTnTo()), TaxiEdge.EdgeType.TAXIWAY));
 			    			}
 				    		
 				    		currentX += increment;
@@ -872,37 +870,6 @@ public class TaxiGen {
 				allEdges.addAll(e.getValue());
 			}
 		} // end of loop over taxiways
-	}
-	
-	/**
-	 * @return distance in metres
-	 */
-	public static double distance(TaxiNode tnFrom, TaxiNode tnTo) {
-		return distance(tnFrom.getLatCoordinate(), tnFrom.getLonCoordinate(), tnTo.getLatCoordinate(), tnTo.getLonCoordinate());
-	}
-
-	/**
-	 * @return distance in metres
-	 */
-	public static double distance(double lat1, double lon1, double lat2, double lon2) {
-		LatLng llFrom = new LatLng(lat1, lon1);
-		LatLng llTo = new LatLng(lat2, lon2);
-		
-		double d = distance(llFrom, llTo);
-		
-		return d;
-	}
-	
-	/**
-	 * @return distance in metres
-	 */
-	public static double distance(LatLng ll1, LatLng ll2) {
-		double d = ll1.distance(ll2) * 1000;
-		if (d < DISTANCE_THRESHOLD_FOR_ZERO_M) {
-			d = 0;
-		}
-		
-		return d;
 	}
 	
 	/**@return double[]{lat,lon}  -- equiv to x,y - assumes line extends beyond the ends that are specified*/
@@ -976,7 +943,7 @@ public class TaxiGen {
 				style += "Runway";
 			}
 			
-			LineString ls = documentTaxiways.createAndAddPlacemark().withName(te.getUniqueString() + "["+te.getTnFrom().getId()+">>>"+te.getTnTo().getId()+"]" + bearing(te)).withStyleUrl(style)
+			LineString ls = documentTaxiways.createAndAddPlacemark().withName(te.getUniqueString() + "["+te.getTnFrom().getId()+">>>"+te.getTnTo().getId()+"]" + Geography.bearing(te)).withStyleUrl(style)
 			.createAndSetLineString(); //.withExtrude(true); //.withTessellate(true);
 
 			ls.addToCoordinates(te.getTnFrom().getLonCoordinate() + "," + te.getTnFrom().getLatCoordinate() + ",0");
@@ -1039,124 +1006,6 @@ public class TaxiGen {
 		}
 				
 		return gmw;
-	}
-
-	
-	/**@return coords as 2D array, with lon,lat ordering - these are coords marking the midpoint of each edge*/
-	public static double[][] edgeListToMidpointCoordList(List<TaxiEdge> edges) {
-		double[][] coords = new double[edges.size()][2];
-		
-		for (int i = 0; i < edges.size(); i++) {
-			double[] mp = edges.get(i).getMidpoint();
-			coords[i][0] = mp[1];
-			coords[i][1] = mp[0];
-		}
-		
-		return coords;
-	}
-
-	/**
-	 * Takes three nodes - previous, current, and next - and gives the turning angle required at the current node to go from prev to next
-	 */
-	public static double angleBetweenNodes(TaxiNode prev, TaxiNode current, TaxiNode next) {
-		// convert to utm coords to allow 2D maths
-		LatLng llprev = new LatLng(prev.getLatCoordinate(), prev.getLonCoordinate());
-		LatLng llnext = new LatLng(next.getLatCoordinate(), next.getLonCoordinate());
-		LatLng llcurrent = new LatLng(current.getLatCoordinate(), current.getLonCoordinate());
-    	
-		return Maths.roundDouble(angleBetweenPoints(llprev, llcurrent, llnext), 2);
-	}
-	
-	public static double angleBetweenPoints(LatLng llprev, LatLng llcurrent, LatLng llnext) {
-		// convert to utm coords to allow 2D maths
-		UTMRef utmPrev = llprev.toUTMRef();
-    	UTMRef utmCurrent = llcurrent.toUTMRef();
-    	UTMRef utmNext = llnext.toUTMRef();
-		double prevX = utmPrev.getEasting();
-		double prevY = utmPrev.getNorthing();
-		double currentX = utmCurrent.getEasting();
-		double currentY = utmCurrent.getNorthing();
-		double nextX = utmNext.getEasting();
-		double nextY = utmNext.getNorthing();
-
-		double angle1 = Math.atan2(currentY - prevY, currentX - prevX);
-		double angle2 = Math.atan2(nextY - currentY, nextX - currentX);
-		
-		double diff = angle1 - angle2;
-		double deg = Math.abs(Math.toDegrees(diff));
-		if (deg > 180) {
-			deg = 360 - deg;
-		}
-		
-		return deg;
-	}
-	
-	/**gets bearing for an edge (angle from north) when travelling from->to*/
-	public static double bearing(TaxiEdge edge) {
-		double lon1 = edge.getTnFrom().getLonCoordinate();
-		double lon2 = edge.getTnTo().getLonCoordinate();
-		double lat1 = Math.toRadians(edge.getTnFrom().getLatCoordinate());
-		double lat2 = Math.toRadians(edge.getTnTo().getLatCoordinate());
-		double lonDiff = Math.toRadians(lon2 - lon1);
-		double y = Math.sin(lonDiff) * Math.cos(lat2);
-		double x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lonDiff);
-		
-		return (Math.toDegrees(Math.atan2(y, x)) + 360) % 360;
-	}
-	
-	/**
-	 * @return NaN if the two edges are not connected
-	 */
-	public static double angleBetweenEdges(TaxiEdge te1, TaxiEdge te2) {
-		TaxiNode start;
-		TaxiNode end;
-		TaxiNode shared;
-		if (te1.getTnFrom() == te2.getTnFrom()) {
-			shared = te1.getTnFrom();
-			start = te1.getTnTo();
-			end = te2.getTnTo();
-		} else if (te1.getTnFrom() == te2.getTnTo()) {
-			shared = te1.getTnFrom();
-			start = te1.getTnTo();
-			end = te2.getTnFrom();
-		} else if (te1.getTnTo() == te2.getTnFrom()) {
-			shared = te1.getTnTo();
-			start = te1.getTnFrom();
-			end = te2.getTnTo();
-		} else if (te1.getTnTo() == te2.getTnTo()) {
-			shared = te1.getTnTo();
-			start = te1.getTnFrom();
-			end = te2.getTnFrom();
-		} else { // no shared node
-			return Double.NaN;
-		}
-		
-		return angleBetweenNodes(start, shared, end);
-	}
-	
-	private static Map<String, Runway> locateRunways(Collection<TaxiEdge> edges) {
-		Map<String, Runway> runways = new TreeMap<String, Runway>();
-		
-		for (TaxiEdge te : edges) {
-			if (te.getEdgeType() == TaxiEdge.EdgeType.RUNWAY) {
-				String name = te.getMeta();
-				
-				if ((name != null) && !name.isEmpty()) {
-					Runway runway = runways.get(name);
-					if (runway == null) {
-						runway = new Runway(name);
-						runways.put(name, runway);
-					}
-					runway.addEdge(te);
-				}
-			}
-		}
-		
-		for (Runway r : runways.values()) {
-			r.determineEntranceNodes();
-		}
-		
-		return runways;
 	}
 	
 	public TaxiNode getTaxiNode(String id) {
@@ -1242,179 +1091,5 @@ public class TaxiGen {
 	
 	public Set<TaxiEdge> getAllEdges() {
 		return allEdges;
-	}
-	
-	public static class Runway {
-		private String name; // e.g. 05L/23R
-		private String name1; // e.g. 05L
-		private String name2; // e.g. 23R
-		private Set<TaxiEdge> edges;
-		private List<TaxiNode> entranceNodes1; // these are entrance nodes for 05L, also exit nodes for 23R, in order of increasing distance from the start of 05L
-		private List<TaxiNode> entranceNodes2; // these are entrance nodes for 23R, also exit nodes for 05L, in order of increasing distance from the start of 23R
-		private List<Double> distances1; // distance that each node in entranceNodes1 is from start of runway
-		private List<Double> distances2; // distance that each node in entranceNodes2 is from start of runway
-		
-		public Runway(String name) {
-			this.name = name;
-			String[] split = name.split("[/\\\\-]");
-			this.name1 = split[0].trim();
-			this.name2 = split[1].trim();
-			
-			this.edges = new TreeSet<TaxiEdge>();
-			this.entranceNodes1 = null;
-			this.entranceNodes2 = null;
-		}
-		
-		public void addEdge(TaxiEdge te) {
-			this.edges.add(te);
-		}
-		
-		public void determineEntranceNodes() {
-			// figure out which nodes are at the ends
-			// if this is a 00/18 RW, then the first node is the one with smallest latitude
-			// otherwise, the first node is the one with the smallest longitude
-			boolean compareLat = name.contains("00") || name.contains("18");
-			
-			this.entranceNodes1 = new ArrayList<TaxiNode>();
-			this.entranceNodes2 = new ArrayList<TaxiNode>();
-			this.distances1 = new ArrayList<Double>();
-			this.distances2 = new ArrayList<Double>();
-			
-			double lowestValue = Double.POSITIVE_INFINITY;
-			double highestValue = Double.NEGATIVE_INFINITY;
-			TaxiNode end1 = null;
-			TaxiNode end2 = null;
-			for (TaxiEdge te : edges) {
-				if ((compareLat ? te.getTnFrom().getLatCoordinate() : te.getTnFrom().getLonCoordinate()) < lowestValue) {
-					end1 = te.getTnFrom();
-					lowestValue = te.getTnFrom().getLonCoordinate();
-				}
-				if ((compareLat ? te.getTnFrom().getLatCoordinate() : te.getTnFrom().getLonCoordinate()) > highestValue) {
-					end2 = te.getTnFrom();
-					highestValue = te.getTnFrom().getLonCoordinate();
-				}
-				if ((compareLat ? te.getTnTo().getLatCoordinate() : te.getTnTo().getLonCoordinate()) < lowestValue) {
-					end1 = te.getTnTo();
-					lowestValue = te.getTnTo().getLonCoordinate();
-				}
-				if ((compareLat ? te.getTnTo().getLatCoordinate() : te.getTnTo().getLonCoordinate()) > highestValue) {
-					end2 = te.getTnTo();
-					highestValue = te.getTnTo().getLonCoordinate();
-				}
-			}
-			
-			// now, for each node, which end is it closest to?
-			for (TaxiEdge te : edges) {
-				if (te.getTnFrom().getNodeType() == NodeType.RUNWAY_CROSSING) {
-					double tnFromDistance1 = distance(te.getTnFrom(), end1);
-					double tnFromDistance2 = distance(te.getTnFrom(), end2);
-					
-					if (tnFromDistance1 < tnFromDistance2) {
-						if (!entranceNodes1.contains(te.getTnFrom())) {
-							entranceNodes1.add(te.getTnFrom());
-							distances1.add(tnFromDistance1);
-						}
-					} else {
-						if (!entranceNodes2.contains(te.getTnFrom())) {
-							entranceNodes2.add(te.getTnFrom());
-							distances2.add(tnFromDistance2);
-						}
-					}
-				}
-				
-				if (te.getTnTo().getNodeType() == NodeType.RUNWAY_CROSSING) {
-					double tnToDistance1 = distance(te.getTnTo(), end1);
-					double tnToDistance2 = distance(te.getTnTo(), end2);
-					
-					if (tnToDistance1 < tnToDistance2) {
-						if (!entranceNodes1.contains(te.getTnTo())) {
-							entranceNodes1.add(te.getTnTo());
-							distances1.add(tnToDistance1);
-						}
-					} else {
-						if (!entranceNodes2.contains(te.getTnTo())) {
-							entranceNodes2.add(te.getTnTo());
-							distances2.add(tnToDistance2);
-						}
-					}
-				}
-			}
-			
-			// finally, sort the lists of nodes
-			for (int i = 0; i < entranceNodes1.size(); i++) {
-				for (int j = 0; j < entranceNodes1.size(); j++) {
-					if (i != j) {
-						if (distances1.get(j) > distances1.get(i)) {
-							Collections.swap(entranceNodes1, i, j);
-							Collections.swap(distances1, i, j);
-						}
-					}
-				}
-			}
-			for (int i = 0; i < entranceNodes2.size(); i++) {
-				for (int j = 0; j < entranceNodes2.size(); j++) {
-					if (i != j) {
-						if (distances2.get(j) > distances2.get(i)) {
-							Collections.swap(entranceNodes2, i, j);
-							Collections.swap(distances2, i, j);
-						}
-					}
-				}
-			}
-		} // end of determineEntranceNodes() method
-		
-		public String getName() {
-			return name;
-		}
-		
-		public String getName1() {
-			return name1;
-		}
-		
-		public String getName2() {
-			return name2;
-		}
-		
-		public List<TaxiNode> getEntranceNodes1() {
-			return entranceNodes1;
-		}
-		
-		public List<TaxiNode> getEntranceNodes2() {
-			return entranceNodes2;
-		}
-		
-		public Set<TaxiEdge> getEdges() {
-			return edges;
-		}
-	} // end of runway subclass
-	
-	private static class Stands {
-		private Map<String, TaxiNode> standNodes = new TreeMap<String, TaxiNode>();
-		private Set<String> standsWithNoCoords;
-		
-		public Stands(String filename) {
-			this.standNodes = new TreeMap<String, TaxiNode>();
-			this.standsWithNoCoords = new TreeSet<String>();
-
-			for (Stand s : SpecifiedGateLocations.loadStandsFromFile(filename)) {
-				if (s.hasCoords()) {
-					TaxiNode tn = new TaxiNode("S-" + s.getName(), NodeType.STAND, s.getLat(), s.getLon());
-					tn.setAssociatedTaxiways(s.getAssociatedTaxiways());
-					tn.setMeta(s.getName());
-					tn.setNodeAttachment(s.getNodeAttachment());
-					standNodes.put(s.getName(), tn);
-				} else {
-					standsWithNoCoords.add(s.getName());
-				}
-			}
-		}
-		
-		private Map<String, TaxiNode> getStandNodes() {
-			return standNodes;
-		}
-		
-		public Set<String> getStandsWithNoCoords() {
-			return standsWithNoCoords;
-		}
 	}
 }

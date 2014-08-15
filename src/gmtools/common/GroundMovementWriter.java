@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * copyright (c) 2014 Alexander E.I. Brownlee
+ * copyright (c) 2014 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
  * Released under the MIT Licence http://opensource.org/licenses/MIT
  * Instructions, citation information, licencing and source
  * are available at https://github.com/gm-tools/gm-tools/
