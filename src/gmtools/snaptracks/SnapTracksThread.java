@@ -1792,9 +1792,9 @@ public class SnapTracksThread extends Thread {
 
 					// whichever is the closest to the edge's bearing is the runway chosen
 					if (diffRW1 < diffRW2) {
-						runwayNames.add(runways[0]);
+						runwayNames.add(runways[0].trim());
 					} else {
-						runwayNames.add(runways[1]);
+						runwayNames.add(runways[1].trim());
 					}
 				 } catch (Exception e) { // any trouble, and we don't assign a runway
 					 runwayNames.add(null);

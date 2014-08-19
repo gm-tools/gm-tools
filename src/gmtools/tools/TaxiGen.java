@@ -104,7 +104,7 @@ public class TaxiGen {
 	 * -rw=y/n : include runways in outputs? y/n (default = y)
 	 */
 	public static void main(String[] args) {
-		args = "export/MAN_OSMStands-with23LStartAsTaxiways.osm export/MAN_OSM_GM.txt -stands=export/MANStands_osm.txt -kml=export/MAN_OSM.kml -angles=export/MAN_OSM_Angles.txt".split("\\s+");
+		//args = "export/MAN_OSMStands-with23LStartAsTaxiways.osm export/MAN_OSM_GM.txt -stands=export/MANStands_osm.txt -kml=export/MAN_OSM.kml -angles=export/MAN_OSM_Angles.txt".split("\\s+");
 		
 		Legal.printLicence("TaxiGen");
 		if (args.length < 2) {

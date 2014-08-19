@@ -45,21 +45,20 @@ public class SpecifiedGateLocations {
 				Integer taxiwayIndex = columnIndices.getColumnIndex(HEADER_TAXIWAY, false);
 				Integer attachmentIndex = columnIndices.getColumnIndex(HEADER_ATTACHMENT, false);
 				
-				if ((latIndex != null) && (lonIndex != null) && (cols.length > Math.max(latIndex, lonIndex))) { // at least name, lat, lon
-					String location = ((locationIndex != null) && (cols.length < locationIndex)) ? cols[locationIndex] : null;
-					String[] strCoords = cols[1].split(" ");
-					double[] dblCoords = Geography.latLonToDecimal(strCoords[0].trim(), strCoords[1].trim());
+				if ((latIndex != null) && (lonIndex != null) && (Math.max(latIndex, lonIndex) < cols.length)) { // at least name, lat, lon
+					String location = ((locationIndex != null) && (locationIndex < cols.length)) ? cols[locationIndex] : null;
+					double[] dblCoords = Geography.latLonToDecimal(cols[latIndex].trim(), cols[lonIndex].trim());
 
 					// -1 * y coord, because lat is up as values increase, whereas screen is down as values increase
 					Stand s = new Stand(label, location, dblCoords[0], dblCoords[1]);
 					stands.add(s);
 					
-					if ((taxiwayIndex != null) && (cols.length < taxiwayIndex)) {
+					if ((taxiwayIndex != null) && (taxiwayIndex < cols.length)) {
 						String[] taxiways = cols[taxiwayIndex].split(SEPARATOR_TAXIWAYS);
 						s.associatedTaxiways = taxiways;
 					}
 					
-					if ((attachmentIndex != null) && (cols.length < attachmentIndex)) {
+					if ((attachmentIndex != null) && (attachmentIndex < cols.length)) {
 						s.nodeAttachment = cols[attachmentIndex];
 					}
 				} else { // just use the name
