@@ -168,7 +168,7 @@ public class SnapTracksThread extends Thread {
 				for (int i = 0; i < newCoordsLL.length; i++) {
 					newCoordsLL[i] = newCoords.get(i).getCoord();
 				}
-				LatLng[][] transposed = TransposeAroundAPoint.coordsAroundPoints(newCoordsLL, maxStepsOut, stepWidthMetres);
+				LatLng[][] transposed = DisplaceAroundAPoint.coordsAroundPoints(newCoordsLL, maxStepsOut, stepWidthMetres);
 				transposedCoords = new ArrayList<TimeCoordinate>(newCoords.size());
 				for (int i = 1; !done && (i < transposed.length); i++) { // skip first one as that's the original
 					if (i % 50 == 0) {

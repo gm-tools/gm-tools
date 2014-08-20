@@ -9,7 +9,7 @@ import uk.me.jstott.jcoord.UTMRef;
  * Instructions, citation information, licencing and source
  * are available at https://github.com/gm-tools/gm-tools/
  */
-public class TransposeAroundAPoint {
+public class DisplaceAroundAPoint {
 	/**original point is first item in returned array*/
 	public static LatLng[] coordsAroundAPoint(LatLng origin, int maxStepsOut, double stepWidthMetres) {
 		int centreX = 0;
