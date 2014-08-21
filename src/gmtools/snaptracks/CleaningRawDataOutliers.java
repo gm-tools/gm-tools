@@ -49,7 +49,7 @@ public class CleaningRawDataOutliers {
 		List<List<PointInTrack>> flightTracksUpdated = new ArrayList<List<PointInTrack>>();
 		List<String> flightTracksComments = new ArrayList<String>();
 		String fileNameIn = null;
-		String fileNameOut = "MAN_TestTaxiTimes-cleaned.txt";
+		String fileNameOut = null;
 
 		int elementsPerPointInTrack = 4;// currently 4 for historical data, 3 for live (which is missing timings so can't be used here anyway)
 		int maxBadPoints = Integer.MAX_VALUE; // might want to limit this for speed (if over 30 then it gets very slow)
@@ -72,15 +72,15 @@ public class CleaningRawDataOutliers {
 			String a = args[i];
 			
 			try {
-				if (a.startsWith("-alat")) {
+				if (a.startsWith("-alat=")) {
 					latAirport = Double.parseDouble(a.substring(6));
-				} else if (a.startsWith("-alon")) {
+				} else if (a.startsWith("-alon=")) {
 					lonAirport = Double.parseDouble(a.substring(6));
-				} else if (a.startsWith("-d")) {
+				} else if (a.startsWith("-d=")) {
 					maxDistanceFromAirportInKM = Double.parseDouble(a.substring(3));
-				} else if (a.startsWith("-M")) {
+				} else if (a.startsWith("-M=")) {
 					maxBadPoints = Integer.parseInt(a.substring(3));
-				} else if (a.startsWith("-m")) {
+				} else if (a.startsWith("-m=")) {
 					maxFractionBad = Double.parseDouble(a.substring(3));
 				}
 			} catch (Exception e) {

@@ -99,8 +99,7 @@ public class SnapTracks {
 		double stepWidthMetres = 10;
 		int maxStepsOut = 50;
 		
-		// default cleaning params
-		List<String> defaultCleaningParams = new ArrayList<String>(Arrays.asList(new String[]{"-M=32","-m=0.8","-d=10"}));
+		List<String> defaultCleaningParams = new ArrayList<String>();
 		
 		Legal.printLicence("SnapTracks");
 		if (args.length < 4) {
@@ -141,7 +140,11 @@ public class SnapTracks {
 				} else if (a.startsWith("-b")) {
 					breakTracksIfGapOverS = Long.parseLong(a.substring(3));
 				} else if (a.startsWith("-clean_")) {
-					defaultCleaningParams.add(a.substring(7));
+					String cp = a.substring(7);
+					if (!cp.startsWith("-")) { // make sure there's a - at the start of the param for passing to CleaningRawDataOutliers.main()
+						cp = "-" + cp;
+					}
+					defaultCleaningParams.add(cp);
 				}
 			} catch (Exception e) {
 				System.err.println("Error parsing argument " + a);
