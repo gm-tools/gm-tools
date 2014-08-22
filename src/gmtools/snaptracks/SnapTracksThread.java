@@ -75,7 +75,7 @@ public class SnapTracksThread extends Thread {
 	private List<Integer> indicesToProcess;
 	private boolean flightTracksFilesIncludedIntervals;
 	
-	// for transpositions
+	// for displacements
 	private int maxStepsOut;
 	private double stepWidthMetres;
 	
@@ -149,43 +149,43 @@ public class SnapTracksThread extends Thread {
 			// try snapoping just the raw coordinates
 			SnapTracksThread.RouteTaken routeTaken = snapRouteToGraph(graph, newCoords, true, currentAircraft);
 			
-			// do we need to transpose the coordinates?
+			// do we need to displace the coordinates?
 			double lonAdded = 0;
 			double latAdded = 0;
 			boolean success = false;
-			List<TimeCoordinate> transposedCoords = null;
+			List<TimeCoordinate> displacedCoords = null;
 			if (routeTaken.getSnappings().size() > 0) { // if route was successfully snapped...
 				success = true; // don't need to do any more!
 			} else {
-				// if not successfully snapped, it might just need transposed. Two ways to do this:
+				// if not successfully snapped, it might just need displaced. Two ways to do this:
 				// 1. look at the coords at either end for a straight line. This will be the runway. Then coords to fit the true runways
 				// 2. (less brittle but more time consuming) walk in a spiral out from the original coords - this is the approach in the paper 
 				printlnSafelyToSystemOut("no routes found - trying some variations...");
 				boolean done = false;
 				
-				// get all possible transposed points
+				// get all possible displaced points
 				LatLng[] newCoordsLL = new LatLng[newCoords.size()];
 				for (int i = 0; i < newCoordsLL.length; i++) {
 					newCoordsLL[i] = newCoords.get(i).getCoord();
 				}
-				LatLng[][] transposed = DisplaceAroundAPoint.coordsAroundPoints(newCoordsLL, maxStepsOut, stepWidthMetres);
-				transposedCoords = new ArrayList<TimeCoordinate>(newCoords.size());
-				for (int i = 1; !done && (i < transposed.length); i++) { // skip first one as that's the original
+				LatLng[][] displaced = DisplaceAroundAPoint.coordsAroundPoints(newCoordsLL, maxStepsOut, stepWidthMetres);
+				displacedCoords = new ArrayList<TimeCoordinate>(newCoords.size());
+				for (int i = 1; !done && (i < displaced.length); i++) { // skip first one as that's the original
 					if (i % 50 == 0) {
-						printlnSafelyToSystemOut("AC " + currentAircraft + " (" + aircraft.get(currentAircraft).getId() + ") transposing, iteration " + i + "/" + transposed.length);
+						printlnSafelyToSystemOut("AC " + currentAircraft + " (" + aircraft.get(currentAircraft).getId() + ") displacing, iteration " + i + "/" + displaced.length);
 					}
 					
-					transposedCoords.clear();
-					for (int j = 0; j < transposed[i].length; j++) {
-						transposedCoords.add(new TimeCoordinate(transposed[i][j], newCoords.get(j).getTimestamp(), newCoords.get(j).getInterval()));
+					displacedCoords.clear();
+					for (int j = 0; j < displaced[i].length; j++) {
+						displacedCoords.add(new TimeCoordinate(displaced[i][j], newCoords.get(j).getTimestamp(), newCoords.get(j).getInterval()));
 					}
 					
-					// try snapping the route on this set of transposed coords
-					routeTaken = snapRouteToGraph(graph, transposedCoords, true, currentAircraft); // harsher tolerance for unsnapped edges
+					// try snapping the route on this set of displaced coords
+					routeTaken = snapRouteToGraph(graph, displacedCoords, true, currentAircraft); // harsher tolerance for unsnapped edges
 					if (routeTaken.getSnappings().size() > 0) {
-						latAdded = transposedCoords.get(0).getCoord().getLat() - newCoordsLL[0].getLat();
-						lonAdded = transposedCoords.get(0).getCoord().getLng() - newCoordsLL[0].getLng();
-						printlnSafelyToSystemOut("AC " + currentAircraft + " (" + aircraft.get(currentAircraft).getId() + ") successfully transposed and snapped, iteration " + i + " adding " + latAdded + " to lat and " + lonAdded + " to lon.");
+						latAdded = displacedCoords.get(0).getCoord().getLat() - newCoordsLL[0].getLat();
+						lonAdded = displacedCoords.get(0).getCoord().getLng() - newCoordsLL[0].getLng();
+						printlnSafelyToSystemOut("AC " + currentAircraft + " (" + aircraft.get(currentAircraft).getId() + ") successfully displaced and snapped, iteration " + i + " adding " + latAdded + " to lat and " + lonAdded + " to lon.");
 						success = true;
 						done = true;
 					}
@@ -199,7 +199,7 @@ public class SnapTracksThread extends Thread {
 			} // end of check for successful snap
 			
 			// if successfully snapped, add to list for visualising, and get stand and runway used by aircraft
-			LatLng[][] snappedCoords = new LatLng[2][0]; // needs to be at least two for original and transposed paths
+			LatLng[][] snappedCoords = new LatLng[2][0]; // needs to be at least two for original and displaced paths
 			List<TaxiNode> snappedStandNodes = null;
 			List<TaxiNode> snappedRunwayNodes = null;
 			List<RouteTaken> splitRoutes = new ArrayList<RouteTaken>();
@@ -218,15 +218,15 @@ public class SnapTracksThread extends Thread {
 				// the snapped route coordinates - just the adjusted ones that met with success - not midpoints, nodes or anything else that might mess things up
 				forOutput = new double[orgCoords.size() * 4];
 				for (int j = 0; j < orgCoords.size(); j++) {
-					if (transposedCoords == null) { // use original coords
+					if (displacedCoords == null) { // use original coords
 						forOutput[j * 4] = orgCoords.get(j).getCoord().getLat(); // no need to swap original back to lat/lon order (it's already in that order), but do need to add altitude for output for consistency
 						forOutput[(j * 4) + 1] = orgCoords.get(j).getCoord().getLng();
 						forOutput[(j * 4) + 2] = 0;
 						forOutput[(j * 4) + 3] = orgCoords.get(j).getInterval();
 						
-					} else { // use transposed coords
-						forOutput[j * 4] = transposedCoords.get(j).getCoord().getLat(); // swap back to lat/lon order and add altitude for output for consistency
-						forOutput[(j * 4) + 1] = transposedCoords.get(j).getCoord().getLng();
+					} else { // use displaced coords
+						forOutput[j * 4] = displacedCoords.get(j).getCoord().getLat(); // swap back to lat/lon order and add altitude for output for consistency
+						forOutput[(j * 4) + 1] = displacedCoords.get(j).getCoord().getLng();
 						forOutput[(j * 4) + 2] = 0;
 						forOutput[(j * 4) + 3] = orgCoords.get(j).getInterval();
 					}
@@ -234,7 +234,7 @@ public class SnapTracksThread extends Thread {
 				
 				// now the flightpaths for the KML output
 				splitRoutes = splitRoute(routeTaken);
-				snappedCoords = new LatLng[splitRoutes.size() + 2][]; // add 2 to leave room for original and transposed paths
+				snappedCoords = new LatLng[splitRoutes.size() + 2][]; // add 2 to leave room for original and displaced paths
 				for (int i = 0; i < splitRoutes.size(); i++) {
 					List<TaxiNode> splitRouteNodes = snappingListToNodeList(splitRoutes.get(i).getSnappings());
 					snappedCoords[i + 2] = nodeListToCoordsList(splitRouteNodes);
@@ -251,9 +251,9 @@ public class SnapTracksThread extends Thread {
 			for (int i = 0; i < snappedCoords[0].length; i++) {
 				snappedCoords[0][i] = newCoords.get(i).getCoord();
 			}
-			snappedCoords[1] = new LatLng[(transposedCoords!=null)?transposedCoords.size():0]; // the transposed coords
+			snappedCoords[1] = new LatLng[(displacedCoords!=null)?displacedCoords.size():0]; // the displaced coords
 			for (int i = 0; i < snappedCoords[1].length; i++) {
-				snappedCoords[1][i] = transposedCoords.get(i).getCoord();
+				snappedCoords[1][i] = displacedCoords.get(i).getCoord();
 			}
 			flightpaths[currentAircraft] = snappedCoords;
 			flightNames[currentAircraft] = aircraft.get(currentAircraft).toString();
@@ -305,7 +305,7 @@ public class SnapTracksThread extends Thread {
 	 * (but if none of the points features on the route, keep the edge that would represent the shortest trip back to the route)
 	 * also - when filling in gaps in the route, do not allow u-turns on runways! (that is r1-r2-r3-r2 where rX is a runway edge)
 	 * finally, if we have runways at either end, split at the visited stand in to two routes.
-	 * @param if harsh is enabled, snap count must be 80% rather than 50%. this is used once transposing to reduce false positives (and used all the time in the work for the paper)
+	 * @param if harsh is enabled, snap count must be 80% rather than 50%. this is used once displacing to reduce false positives (and used all the time in the work for the paper)
 	 * @return the actual route taken - where u-turns take place, an edge appears more than once
 	 */
 	public RouteTaken snapRouteToGraph(WeightedMultigraph<TaxiNode, TaxiEdge> graph, List<TimeCoordinate> track, boolean harsh, int aircraftNumberForOutput) {

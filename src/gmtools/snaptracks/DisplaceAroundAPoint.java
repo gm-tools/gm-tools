@@ -54,7 +54,7 @@ public class DisplaceAroundAPoint {
 		return coords;
 	}
 	
-	/**@return a 2D array, each element is an array of transposed points; first element is original track, later ones are increasing distance from it*/
+	/**@return a 2D array, each element is an array of displaced points; first element is original track, later ones are increasing distance from it*/
 	public static LatLng[][] coordsAroundPoints(LatLng[] originTrail, int maxStepsOut, double stepWidthMetres) {
 		LatLng[][] rval1 = new LatLng[originTrail.length][];
 		for (int i = 0; i < originTrail.length; i++) {

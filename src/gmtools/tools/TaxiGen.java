@@ -105,6 +105,7 @@ public class TaxiGen {
 	 */
 	public static void main(String[] args) {
 		//args = "export/MAN_OSMStands-with23LStartAsTaxiways.osm export/MAN_OSM_GM.txt -stands=export/MANStands_osm.txt -kml=export/MAN_OSM.kml -angles=export/MAN_OSM_Angles.txt".split("\\s+");
+		//args = "i:/Data/BHX/BHX.osm BHX_GM.txt -stands=i:/Data/BHX/1311130531_BHXGateLocations.txt -kml=BHX.kml -angles=BHX_Angles.txt".split("\\s+");
 		
 		Legal.printLicence("TaxiGen");
 		if (args.length < 2) {
@@ -241,11 +242,16 @@ public class TaxiGen {
 				} else {
 					// which taxiways is the node associated with?
 					List<Taxiway> associatedTaxiways = new ArrayList<Taxiway>();
+					
+					if (tn.getAssociatedTaxiways().length == 0) {
+						System.out.println("No taxiways specified for stand node " + tn);
+					}
+					
 					for (String tw : tn.getAssociatedTaxiways()) {
 						if (taxiways.containsKey(tw.toUpperCase())) {
 							associatedTaxiways.add(taxiways.get(tw.toUpperCase()));
 						} else {
-							System.out.println("Couldn't find taxiway " + tw + " for node " + tn);
+							System.out.println("Couldn't find taxiway " + tw + " for stand node " + tn);
 						}
 					}
 					

@@ -76,8 +76,8 @@ public class SnapTracks {
 	 *    -clean_XXX=YYY : any parameters that need passed to cleaning algorithm
 	 */
 	public static void main(String[] args) {
-//		args = "I:/Data/STR/STR_GM.txt STR_GM_Snapped STR I:/Data/STR/FR24-STR-20140627_000000-20140718_000000-00000001.txt threads=2 steps=0 clean_M=1 alat=48.691 alon=9.216 end=10".split(" ");
 //		args = "MAN_GM.txt MAN_GM_Test MAN MAN_TestTaxiTimes.txt -alat=53.35 -alon=-2.27 -steps=0".split("\\s+");
+//		args = "I:/Data/STR/STR_GM.txt STR_GMTest_Snapped STRTest export/STRTest.txt -steps=100 -clean_M=15 -alat=48.691 -alon=9.216 -end=10".split(" ");
 		
 		String gmFile = null; // input GM file with airport layout
 		String filePrefix = null; // prefix for snapped tracks and times output files
@@ -95,7 +95,7 @@ public class SnapTracks {
 		
 		int numberOfThreads = Runtime.getRuntime().availableProcessors();
 		
-		// transpose params
+		// displacement params
 		double stepWidthMetres = 10;
 		int maxStepsOut = 50;
 		
@@ -170,7 +170,7 @@ public class SnapTracks {
 		System.out.println("  Airport ID, lat and lon:" + airportID + ", " + latAirport + ", " + lonAirport);
 		System.out.println("  Flights to process:" + ((endFlight < startFlight)? "all" : startFlight + " to " + endFlight));
 		System.out.println("  Threads:" + numberOfThreads);
-		System.out.println("  Transpose step size, count:" + stepWidthMetres + ", " + maxStepsOut);
+		System.out.println("  Displacement step size, count:" + stepWidthMetres + ", " + maxStepsOut);
 		System.out.println("  Min points near airport required to try snapping:" + min);
 		System.out.println("  Flight track files:" + ArrayTools.toString(flightTracksFiles, ","));
 		System.out.println();
@@ -520,8 +520,8 @@ public class SnapTracks {
 		.withColor("ff55ee00")
 		.withWidth(4.0d);
 
-		final Style styleTransposedFP = documentFlightpaths.createAndAddStyle().withId("linestyleTransposedFlightpath");
-		styleTransposedFP.createAndSetLineStyle()
+		final Style styleDisplacedFP = documentFlightpaths.createAndAddStyle().withId("linestyleDisplacedFlightpath");
+		styleDisplacedFP.createAndSetLineStyle()
 		.withColor("ffee00ee")
 		.withWidth(4.0d);
 
@@ -569,9 +569,9 @@ public class SnapTracks {
 				lsOriginalFP.addToCoordinates(flightpath[0][i].getLng() + "," + flightpath[0][i].getLat() + ",0");
 			}
 			
-			LineString lsTransposedFP = documentFlightpath.createAndAddPlacemark().withName((flightpath[1].length==0?"Not":"")+"Transposed"/*+acName*/).withStyleUrl("#linestyleTransposedFlightpath").withVisibility(false).createAndSetLineString();
+			LineString lsDisplacedFP = documentFlightpath.createAndAddPlacemark().withName((flightpath[1].length==0?"Not":"")+"Displaced"/*+acName*/).withStyleUrl("#linestyleDisplacedFlightpath").withVisibility(false).createAndSetLineString();
 			for (int i = 0; i < flightpath[1].length; i++) {
-				lsTransposedFP.addToCoordinates(flightpath[1][i].getLng() + "," + flightpath[1][i].getLat() + ",0");
+				lsDisplacedFP.addToCoordinates(flightpath[1][i].getLng() + "," + flightpath[1][i].getLat() + ",0");
 			}
 			
 			for (int splitTrackNumber = 2; splitTrackNumber < flightpath.length; splitTrackNumber++) {
