@@ -172,7 +172,7 @@ public class SnapTracksThread extends Thread {
 				transposedCoords = new ArrayList<TimeCoordinate>(newCoords.size());
 				for (int i = 1; !done && (i < transposed.length); i++) { // skip first one as that's the original
 					if (i % 50 == 0) {
-						printlnSafelyToSystemOut("AC " + currentAircraft + " transposing, iteration " + i + "/" + transposed.length);
+						printlnSafelyToSystemOut("AC " + currentAircraft + " (" + aircraft.get(currentAircraft).getId() + ") transposing, iteration " + i + "/" + transposed.length);
 					}
 					
 					transposedCoords.clear();
@@ -185,7 +185,7 @@ public class SnapTracksThread extends Thread {
 					if (routeTaken.getSnappings().size() > 0) {
 						latAdded = transposedCoords.get(0).getCoord().getLat() - newCoordsLL[0].getLat();
 						lonAdded = transposedCoords.get(0).getCoord().getLng() - newCoordsLL[0].getLng();
-						printlnSafelyToSystemOut("AC " + currentAircraft + " successfully transposed and snapped, iteration " + i + " adding " + latAdded + " to lat and " + lonAdded + " to lon.");
+						printlnSafelyToSystemOut("AC " + currentAircraft + " (" + aircraft.get(currentAircraft).getId() + ") successfully transposed and snapped, iteration " + i + " adding " + latAdded + " to lat and " + lonAdded + " to lon.");
 						success = true;
 						done = true;
 					}
@@ -514,6 +514,10 @@ public class SnapTracksThread extends Thread {
 			}
 		}
 		
+		if (localDebug) {
+			printlnSafelyToSystemOut("Starting Stage 3a (step 10)...");
+		}
+		
 		// stage 3a (step 10): work along path, looking for pairs of coords matching single edges (that is, no doubt about which edge a coord corresponds to)
 		// get list of k shortest paths between those edges
 		// pick the path which maximises the number of edges that would be kept (ie the path contains the most edges from the set of candidate edges between the two coords)
@@ -549,6 +553,17 @@ public class SnapTracksThread extends Thread {
 				if (!((leftEdge == rightEdge) || leftEdge.isAdjacentTo(rightEdge))) {
 					// work out the two closest nodes of the four represented by the edges 
 					TaxiNode[] leftRightNodes = getNodePair(graph, leftEdge, rightEdge, true);
+					
+					if ((leftRightNodes[0] == null) || (leftRightNodes[1] == null)) {
+						// if we get here, it's because we found an edge not connected to the rest of the graph
+						// issue a warning and continue
+						printlnSafelyToSystemOut("Warning: couldn't find a route between edges " + leftEdge.getId() + " and " + rightEdge.getId());
+						return DEFAULT;
+					}
+					
+					if (localDebug) {
+						printlnSafelyToSystemOut("Looking for paths connects snapping " + leftIndex + " to " + rightIndex + ": " + leftEdge + " >>> " + rightEdge + "; " + leftRightNodes[0] + " >>> " + leftRightNodes[1]);
+					}
 					
 					// get set of paths between the closest nodes
 					KShortestPaths<TaxiNode, TaxiEdge> ksp = new KShortestPaths<TaxiNode, TaxiEdge>(graph, leftRightNodes[0], kForStage2PathReduction);
@@ -1140,7 +1155,10 @@ public class SnapTracksThread extends Thread {
 		}
 	}
 	
-	/**returns the pair of nodes belonging to the specified edges that are nearest or furthest apart*/
+	/**
+	 * @return the pair of nodes belonging to the specified edges that are nearest or furthest apart.
+	 * These will be nulls if no connection could be found!
+	 */
 	public static TaxiNode[] getNodePair(WeightedMultigraph<TaxiNode, TaxiEdge> graph, TaxiEdge leftEdge, TaxiEdge rightEdge, boolean nearest) {
 		double best = nearest ? Double.POSITIVE_INFINITY : Double.NEGATIVE_INFINITY;
 		TaxiNode leftNode = null;

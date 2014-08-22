@@ -71,7 +71,7 @@ public class GM2KML {
 	// STAND_PATHS_BINNED : output paths used by aircraft to reach stands in bins as specified
 	// VISITS_PER_STAND : show number of movements at each stand with various sizes of icon
 	// AVERAGE_SPEED_PER_EDGE : use colour to show the average taxi speed on edges (red=slow, white=fast, scaled to range of speeds in data)
-	// AVERAGE_SPEED_PER_EDGE_BINNED : 
+	// AVERAGE_SPEED_PER_EDGE_BINNED : average speeds on edges during the times specified by the time bins
 	public static void main(String[] args) {
 		//args = "MAN_GM_withFlights-20131105_090000-20131112_085900.txt -o=MAN_a.kml -m=STAND_PATHS_BINNED -bweekend=y -bins=380,640,960,1200".split("\\s+");
 		
