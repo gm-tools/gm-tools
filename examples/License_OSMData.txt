@@ -1,0 +1,3 @@
+The included OSM data and taxiway layouts derived from it are copyright OpenStreetMap Contributors.
+It is made available under the Open Database Licence.
+For more information, see http://www.openstreetmap.org/copyright
