@@ -820,6 +820,11 @@ public class SnapTracksThread extends Thread {
 								currentFromTo = false;
 							}
 							
+							if (dsp.getPath() == null) {
+								System.err.println("WARNING: No path found between nodes " + previousSnap.getSnappedEdge().getTnTo() + " and " + currentSnap.getSnappedEdge().getTnTo() + ". Check the graph for connectivity!");
+								return DEFAULT;
+							}
+							
 							if (localDebug) {
 								System.out.println("Completing path between " + previousSnap.getSnappedEdge() + " and " + currentSnap.getSnappedEdge() + ":" + shortestPath.size() + " edges, " + previousFromTo + "/" + currentFromTo);
 							}
