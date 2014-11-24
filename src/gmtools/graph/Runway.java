@@ -4,6 +4,7 @@ import gmtools.common.Geography;
 import gmtools.graph.TaxiNode.NodeType;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -133,6 +134,30 @@ public class Runway {
 			}
 		}
 	} // end of determineEntranceNodes() method
+	
+	public void removeNodes(Collection<TaxiNode> nodes) {
+		TreeSet<TaxiEdge> toRemove = new TreeSet<>();
+		for (TaxiEdge e : this.edges) {
+			if (nodes.contains(e.getTnFrom()) || nodes.contains(e.getTnTo())) {
+				toRemove.add(e);
+			}
+		}
+		this.edges.removeAll(toRemove);
+		
+		for (int i = this.entranceNodes1.size() - 1; i >= 0; i--) {
+			if (nodes.contains(this.entranceNodes1.get(i))) {
+				this.entranceNodes1.remove(i);
+				this.distances1.remove(i);
+			}
+		}
+		
+		for (int i = this.entranceNodes2.size() - 1; i >= 0; i--) {
+			if (nodes.contains(this.entranceNodes2.get(i))) {
+				this.entranceNodes2.remove(i);
+				this.distances2.remove(i);
+			}
+		}
+	}
 	
 	public String getName() {
 		return name;

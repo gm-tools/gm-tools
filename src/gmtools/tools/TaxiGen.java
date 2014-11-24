@@ -15,9 +15,11 @@ import gmtools.parsers.ParseOSM;
 import gmtools.parsers.ParseOSM.AeroWay;
 import gmtools.parsers.ParseOSM.AeroWay.Type;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,6 +32,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
+import org.jgrapht.alg.ConnectivityInspector;
 import org.jgrapht.graph.WeightedMultigraph;
 import org.openstreetmap.osmosis.core.domain.v0_6.Node;
 import org.openstreetmap.osmosis.core.domain.v0_6.WayNode;
@@ -121,6 +124,7 @@ public class TaxiGen {
 		boolean includeRunways = true;
 		double thresholdForSnapToNode = 1;
 		double spacingForIntermediates = 50;
+		boolean checkConnectivity = true;
 		
 		for (int i = 2; i < args.length; i++) {
 			String arg = args[i];
@@ -148,6 +152,9 @@ public class TaxiGen {
 			} else if (argLC.startsWith("-rw=")) {
 				String s = argLC.substring(4);
 				includeRunways = s.contains("y") || s.contains("t");
+			} else if (argLC.startsWith("-conn=")) {
+				String s = argLC.substring(6);
+				checkConnectivity = s.contains("y") || s.contains("t");
 			} else {
 				System.err.println("Unknown parameter: " + arg);
 				System.exit(1);
@@ -164,20 +171,24 @@ public class TaxiGen {
 		System.out.println(includeRunways ? "Including runways in output" : "Excluding runways from output");
 		System.out.println("Now processing...");
 		
-		TaxiGen at = new TaxiGen(standsDataFile, osmDataFile, thresholdForSnapToNode, spacingForIntermediates);
+		TaxiGen tg = new TaxiGen(standsDataFile, osmDataFile, thresholdForSnapToNode, spacingForIntermediates);
+		
+		if (checkConnectivity) {
+			tg.checkConnectivityDialogue("DebugConnectivity.kml");
+		}
 		
 		System.out.println("Writing GM file:" + outputGMFile);
-		GroundMovementWriter gmw = at.graphNodesAndEdgesToGMFile(false);
+		GroundMovementWriter gmw = tg.graphNodesAndEdgesToGMFile(false);
 		gmw.writeFile(outputGMFile);
 		
 		if (edgeAnglesFile != null) {
 			System.out.println("Writing edge angles:" + edgeAnglesFile);
-			at.graphEdgeAnglesToGMStyleFile(edgeAnglesFile, !includeRunways);
+			tg.graphEdgeAnglesToGMStyleFile(edgeAnglesFile, !includeRunways);
 		}
 		
 		if (kmlFile != null) {
 			System.out.println("Writing KML:" + kmlFile);
-			at.graphNodesAndEdgesToKML(kmlFile, !includeRunways);
+			tg.graphNodesAndEdgesToKML(kmlFile, !includeRunways);
 		}
 		
 		System.out.println("All done.");
@@ -195,6 +206,7 @@ public class TaxiGen {
 		System.out.println(" -spacing=n : spacing in metres between intermediate nodes on long taxiway edges (default=50); negative to disable"); 
 		System.out.println(" -minDistance=n : when adding a node to a taxiway for a stand to attach to, if a node exists within this distance, attach to that instead (default=1)");
 		System.out.println(" -rw=y/n : include runways in outputs? y/n (default = y)");
+		System.out.println(" -conn=y/n : check graph connectivity? y/n (default = y)");
 		System.out.println();
 	}
 	
@@ -435,6 +447,92 @@ public class TaxiGen {
 		for (TaxiEdge te : allTaxiEdges) {
 			graphTaxiways.addEdge(te.getTnFrom(), te.getTnTo(), te);
 			graphTaxiways.setEdgeWeight(te, te.getLength());
+		}
+	}
+	
+	/**
+	 * this performs a process of connectivity checks on the whole airport graph
+	 * if the graph is wholly connected, then nothing is changed.
+	 * if not, a KML file (specified by filename) is written out to allow the user to debug the disconnected graph
+	 * the user can choose which subgraph to retain (only one of them can be chosen), or to abort the whole process
+	 * (choosing to retain one subgraph removes all other nodes from the final graph that will be written out)
+	 */
+	public void checkConnectivityDialogue(String filename) {
+		ConnectivityInspector<TaxiNode, TaxiEdge> ci = new ConnectivityInspector<>(this.graphWholeAirport);
+		
+		if (!ci.isGraphConnected()) {
+			List<Set<TaxiNode>> groups = ci.connectedSets();
+			
+			System.out.println("WARNING: the airport graph is not fully connected.");
+			System.out.println("There are " + groups.size() + " distinct groups of connected nodes.");
+			System.out.println("Writing out KML debug file showing the groups to " + filename + ", please wait...");
+			
+			graphNodesAndEdgesInGroupsToKML(filename, groups, allEdges);
+			
+			System.out.println("File Written. Please take a look.");
+			System.out.println("You should either quit and amend the OSM source data before retrying,");
+			System.out.println("or choose one of the groups...");
+			System.out.println("Please type the number of a group (0-" + (groups.size()-1) + ", identified in the KML) or Q to quit.");
+			
+			boolean done = false;
+			int choice = -1;
+			while (!done) {
+				try {
+					BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
+					String line = in.readLine();
+					
+					if (line.toLowerCase().startsWith("q")) {
+						System.out.println("Okay, quitting.");
+						System.exit(0);
+					} else {
+						try {
+							choice = Integer.parseInt(line);
+							
+							if ((choice < 0) || (choice >= groups.size())) {
+								System.out.println("Please enter just a number 0-" + (groups.size()-1) + " or 'q'.");
+							} else {
+								done = true;
+							}
+						} catch (NumberFormatException e) {
+							System.out.println("Please enter just a number 0-" + (groups.size()-1) + " or 'q'.");
+						}
+					}
+				} catch (IOException e) {
+					System.out.println("Error encountered when reading from STDIN.");
+					System.out.println("Going with group 0.");
+					choice = 0;
+					done = true;
+				}
+			}
+			
+			// tidy up the graph to match the user's choice.
+			Set<TaxiNode> toRemove = new TreeSet<TaxiNode>();
+			for (int i = 0; i < groups.size(); i++) {
+				if (i != choice) {
+					toRemove.addAll(groups.get(i));
+				}
+			}
+			
+			for (TaxiNode node : toRemove) {
+				Set<TaxiEdge> s = this.graphWholeAirport.edgesOf(node);
+				this.allEdges.removeAll(s);
+				this.allTaxiEdges.removeAll(s);
+				
+				if (node.getNodeType() == NodeType.STAND) {
+					this.standNodes.remove(node.getMeta());
+				}
+				
+				this.allNodes.remove(node.getId());
+			}
+
+			this.allTaxiNodes.removeAll(toRemove);
+			
+			for (Runway rw : this.runways.values()) {
+				rw.removeNodes(toRemove);
+			}
+
+			this.graphWholeAirport.removeAllVertices(toRemove);
+			this.graphTaxiways.removeAllVertices(toRemove);
 		}
 	}
 	
@@ -960,6 +1058,68 @@ public class TaxiGen {
 			String meta = (tn.getMeta() != null) && (!tn.getMeta().isEmpty()) ? " (" + tn.getMeta() + ")" : "";
 			Placemark p = documentNodes.createAndAddPlacemark().withName(tn.getId() + meta).withStyleUrl("#placemarkStyleGates");
 			p.createAndSetPoint().addToCoordinates(tn.getLonCoordinate(), tn.getLatCoordinate());
+		}
+		
+		KMLUtils.addGroundOverlayToKMLDocument(filename, document);
+		
+		try {
+			kml.marshal(new File(filename));
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+    
+    private static void graphNodesAndEdgesInGroupsToKML(String filename, List<Set<TaxiNode>> nodes, Collection<TaxiEdge> edges) {
+		final Kml kml = KmlFactory.createKml();
+		final Document document = kml.createAndSetDocument().withName(filename).withOpen(true);
+		final Document documentTaxiways = document.createAndAddDocument().withName(filename + "Taxiways").withOpen(false);
+		final Document documentNodes = document.createAndAddDocument().withName(filename + "Nodes").withOpen(true);
+		Document[] documentNodeGroups = new Document[nodes.size()];
+		for (int i = 0; i < documentNodeGroups.length; i++) {
+			documentNodeGroups[i] = documentNodes.createAndAddDocument().withName("Group " + i).withOpen(false);
+		}
+		
+		final Style styleOSM = documentNodes.createAndAddStyle().withId("placemarkStyleGates");
+		styleOSM.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor("ffff7777").withScale(1);
+		
+		final Style styleTaxiway = documentTaxiways.createAndAddStyle().withId("linestyleTaxiway");
+		styleTaxiway.createAndSetLineStyle()
+		.withColor("550000ff")
+		.withWidth(4.0d);
+
+		final Style styleRunway = documentTaxiways.createAndAddStyle().withId("linestyleRunway");
+		styleRunway.createAndSetLineStyle()
+		.withColor("5500ff00")
+		.withWidth(4.0d);
+		
+		final Style styleTaxiwayToGate = documentTaxiways.createAndAddStyle().withId("linestyleTaxiwayToGate");
+		styleTaxiwayToGate.createAndSetLineStyle()
+		.withColor("55ff0000")
+		.withWidth(4.0d);
+
+		for (TaxiEdge te : edges) {
+			String style = "#linestyle";
+			if (te.getEdgeType() == TaxiEdge.EdgeType.TAXIWAY) {
+				style += "Taxiway";
+			} else if (te.getEdgeType() == TaxiEdge.EdgeType.STAND_CONNECTION) {
+				style += "TaxiwayToGate";
+			} else {
+				style += "Runway";
+			}
+			
+			LineString ls = documentTaxiways.createAndAddPlacemark().withName(te.getUniqueString() + "["+te.getTnFrom().getId()+">>>"+te.getTnTo().getId()+"]" + Geography.bearing(te)).withStyleUrl(style)
+			.createAndSetLineString(); //.withExtrude(true); //.withTessellate(true);
+
+			ls.addToCoordinates(te.getTnFrom().getLonCoordinate() + "," + te.getTnFrom().getLatCoordinate() + ",0");
+			ls.addToCoordinates(te.getTnTo().getLonCoordinate() + "," + te.getTnTo().getLatCoordinate() + ",0");
+		}
+		
+		for (int i = 0; i < documentNodeGroups.length; i++) {
+			for (TaxiNode tn : nodes.get(i)) {
+				String meta = (tn.getMeta() != null) && (!tn.getMeta().isEmpty()) ? " (" + tn.getMeta() + ")" : "";
+				Placemark p = documentNodeGroups[i].createAndAddPlacemark().withName(tn.getId() + meta).withStyleUrl("#placemarkStyleGates");
+				p.createAndSetPoint().addToCoordinates(tn.getLonCoordinate(), tn.getLatCoordinate());
+			}
 		}
 		
 		KMLUtils.addGroundOverlayToKMLDocument(filename, document);
