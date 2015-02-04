@@ -6,6 +6,7 @@ import gmtools.common.KMLUtils;
 import gmtools.common.Sets;
 import gmtools.parsers.ColumnIndices;
 import gmtools.parsers.RawFlightTrackData;
+import gmtools.tools.SnapTracks;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -54,7 +55,7 @@ public class CleaningRawDataOutliers {
 		int elementsPerPointInTrack = 4;// currently 4 for historical data, 3 for live (which is missing timings so can't be used here anyway)
 		int maxBadPoints = Integer.MAX_VALUE; // might want to limit this for speed (if over 30 then it gets very slow)
 		double maxFractionBad = 0.8; // maximum fraction of points allowed to be bad before giving up
-		boolean debug = false;
+		boolean debug = SnapTracks.GLOBAL_DEBUG_CLEANING;
 		double latAirport = Double.NaN;
 		double lonAirport = Double.NaN;
 		double maxDistanceFromAirportInKM = 10;
@@ -127,9 +128,14 @@ public class CleaningRawDataOutliers {
 			while ((line = in.readLine()) != null) {
 				countRaw++;
 				//debug = (flightTracksOriginal.size() == 1488);
-				if (debug) System.out.println("AC" + flightTracksOriginal.size());
-				boolean trackGood;
+				if (debug) { System.out.print("AC" + flightTracksOriginal.size()); System.out.flush(); }
 				String[] cols = line.split(RawFlightTrackData.SEPARATOR);
+				String id = cols[columnIndices.getColumnIndex(RawFlightTrackData.HEADER_ID, false)];
+				id = id != null ? id : "Track" + countRaw;
+				
+				if (debug) System.out.println(" (" + id + ")");
+								
+				boolean trackGood;
 				String[] track = cols[columnIndices.getColumnIndex(RawFlightTrackData.HEADER_TRACK, true)].split(RawFlightTrackData.SEPARATOR_COORDS);
 				List<PointInTrack> trackOriginal = new ArrayList<PointInTrack>(track.length / elementsPerPointInTrack);
 				List<PointInTrack> trackUpdated = new ArrayList<PointInTrack>(track.length / elementsPerPointInTrack);
@@ -168,7 +174,7 @@ public class CleaningRawDataOutliers {
 						countGoodTracks++;
 						trackGood = true;
 					} else {
-						if (debug) System.out.println("AC" + (flightTracksOriginal.size()-1) + " bad points:" + ArrayTools.toString(badPointsInOriginal.toArray()));
+						if (debug) System.out.println("AC" + (flightTracksOriginal.size()-1) + " (" + id + ")" + " bad points:" + ArrayTools.toString(badPointsInOriginal.toArray()));
 						trackGood = false;
 						
 						// step 7 onward.
@@ -179,7 +185,7 @@ public class CleaningRawDataOutliers {
 						List<Integer> badPoints = new ArrayList<Integer>(badPointsInOriginal);
 						List<PointInTrack> badTrack = new ArrayList<PointInTrack>(trackOriginal);
 						while (!done && !badPoints.isEmpty() && (badPoints.size() < Math.min(maxBadPoints, (badTrack.size() * maxFractionBad)))) { // stop if we have found a valid track, or if there are too many bad points (>80% of points are bad)
-							if (debug) System.out.println("AC" + (flightTracksOriginal.size()-1) + " still has " + badPoints.size() + " bad points out of " + badTrack.size());
+							if (debug) System.out.println("AC" + (flightTracksOriginal.size()-1) + " (" + id + ")" + " still has " + badPoints.size() + " bad points out of " + badTrack.size());
 							for (int numberToRemove = 1; !done && (numberToRemove <= badPoints.size()); numberToRemove++) {
 								if (debug) System.out.println(numberToRemove + "/" + badPoints.size());
 								// get the possible indices to remove
@@ -242,6 +248,7 @@ public class CleaningRawDataOutliers {
 					trackGood = false;
 					comment = "too few elements in track";
 				}
+				comment = "(" + id + ") " + comment;
 				flightTracksComments.add(comment);
 				
 				if (trackGood) {

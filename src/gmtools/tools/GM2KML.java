@@ -142,6 +142,10 @@ public class GM2KML {
 				System.exit(3);
 			}
 		}
+		if ((inEdgeTimes == null) && (mode == Mode.AVERAGE_SPEED_PER_EDGE || mode == Mode.AVERAGE_SPEED_PER_EDGE_BINNED)) {
+			System.err.println("For mode " + mode + ", you need to specify a times input file with -t=XXX.txt");
+			System.exit(4);
+		}
 		
 		PrintStream outDetailPS = null;
 		if (outDetail != null) {
@@ -653,7 +657,7 @@ public class GM2KML {
     	
 		try {
 		    BufferedReader in = new BufferedReader(new FileReader(inEdgeTimes));
-		    final String SEPARATOR = ",";
+		    final String SEPARATOR = "\t";
 		    
 		    String header = in.readLine(); // get header
 		    String[] cols = header.split(SEPARATOR);
@@ -672,7 +676,7 @@ public class GM2KML {
 		    
 		    if ((indexEdgeID < 0) || (indexEdgeInTime < 0) || (indexEdgeOutTime < 0) || (indexTime < 0)) {
 		    	in.close();
-		    	throw new IOException("Bad file format. Couldn't find column(s) headed" + (indexEdgeID<0?":EdgeID":"") + (indexEdgeInTime<0?":EdgeInTime":"") + (indexEdgeOutTime<0?":EdgeOutTime":"") + (indexTime<0?":TimeTakenSeconds":""));
+		    	throw new IOException("Bad file format. Couldn't find column(s) headed " + (indexEdgeID<0?":EdgeID":"") + (indexEdgeInTime<0?":EdgeInTime":"") + (indexEdgeOutTime<0?":EdgeOutTime":"") + (indexTime<0?":TimeTakenSeconds":""));
 		    }
 		    
 		    String line;

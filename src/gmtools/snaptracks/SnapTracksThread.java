@@ -11,6 +11,7 @@ import gmtools.graph.TaxiNode.NodeType;
 import gmtools.parsers.RawFlightTrackData.Aircraft;
 import gmtools.parsers.RawFlightTrackData.TimeCoordinate;
 import gmtools.snaptracks.SnapTracksThread.Snapping.CoordTime;
+import gmtools.tools.SnapTracks;
 import gmtools.tools.TaxiGen;
 
 import java.io.File;
@@ -94,6 +95,9 @@ public class SnapTracksThread extends Thread {
 	// alg params
 	private int kForStage2PathReduction;
 	
+	private static Map<TaxiNode,Map<TaxiNode,List<GraphPath<TaxiNode, TaxiEdge>>>> kShortestPathsCache = new HashMap<>();
+	private static Map<TaxiNode,Map<TaxiNode,DijkstraShortestPath<TaxiNode, TaxiEdge>>> shortestPathCache = new HashMap<>();
+	
 	
 	/**
 	 * @param TaxiGen is a param so we can get the GMW IDs for edges and nodes
@@ -147,7 +151,7 @@ public class SnapTracksThread extends Thread {
 			}
 			
 			// try snapoping just the raw coordinates
-			SnapTracksThread.RouteTaken routeTaken = snapRouteToGraph(graph, newCoords, true, currentAircraft);
+			SnapTracksThread.RouteTaken routeTaken = snapRouteToGraph(newCoords, true, currentAircraft);
 			
 			// do we need to displace the coordinates?
 			double lonAdded = 0;
@@ -181,7 +185,7 @@ public class SnapTracksThread extends Thread {
 					}
 					
 					// try snapping the route on this set of displaced coords
-					routeTaken = snapRouteToGraph(graph, displacedCoords, true, currentAircraft); // harsher tolerance for unsnapped edges
+					routeTaken = snapRouteToGraph(displacedCoords, true, currentAircraft); // harsher tolerance for unsnapped edges
 					if (routeTaken.getSnappings().size() > 0) {
 						latAdded = displacedCoords.get(0).getCoord().getLat() - newCoordsLL[0].getLat();
 						lonAdded = displacedCoords.get(0).getCoord().getLng() - newCoordsLL[0].getLng();
@@ -308,8 +312,8 @@ public class SnapTracksThread extends Thread {
 	 * @param if harsh is enabled, snap count must be 80% rather than 50%. this is used once displacing to reduce false positives (and used all the time in the work for the paper)
 	 * @return the actual route taken - where u-turns take place, an edge appears more than once
 	 */
-	public RouteTaken snapRouteToGraph(WeightedMultigraph<TaxiNode, TaxiEdge> graph, List<TimeCoordinate> track, boolean harsh, int aircraftNumberForOutput) {
-		boolean localDebug = false; // enable to output KML and debugging data after each step
+	public RouteTaken snapRouteToGraph(List<TimeCoordinate> track, boolean harsh, int aircraftNumberForOutput) {
+		boolean localDebug = SnapTracks.GLOBAL_DEBUG_SNAPPING; // enable to output KML and debugging data after each step
 
 		// in the comments below "stage" refers to a larger stages in the paper text
 		// "step" refers to a step in the algorithm 
@@ -481,7 +485,7 @@ public class SnapTracksThread extends Thread {
 			printlnSafelyToSystemOut("Closest stand edge:" + closestStandEdge);
 			printlnSafelyToSystemOut("Stands with dedicated snappings...");
 			for (Entry<String, Set<Integer>> e : indicesWithSingleStands.entrySet()) {
-				printlnSafelyToSystemOut(e.getKey() + ", indices: " + ArrayTools.toString(e.getValue().toArray()));
+				printlnSafelyToSystemOut(e.getKey() + ", indices: " + ArrayTools.toString(e.getValue().toArray(), ","));
 			}
 			printlnSafelyToSystemOut("Chosen:" + chosenStandName);
 		}
@@ -566,8 +570,7 @@ public class SnapTracksThread extends Thread {
 					}
 					
 					// get set of paths between the closest nodes
-					KShortestPaths<TaxiNode, TaxiEdge> ksp = new KShortestPaths<TaxiNode, TaxiEdge>(graph, leftRightNodes[0], kForStage2PathReduction);
-					List<GraphPath<TaxiNode, TaxiEdge>> paths = ksp.getPaths(leftRightNodes[1]);
+					List<GraphPath<TaxiNode, TaxiEdge>> paths = getShortestsPathsBetween(leftRightNodes[0], leftRightNodes[1]);
 					
 					// for each path, count the number of edges that would be kept if that was the path used
 					int maxEdgeCount = 0;
@@ -789,13 +792,13 @@ public class SnapTracksThread extends Thread {
 				if (j > 0) { // not on first edge
 					if (currentSnap.getSnappedEdge() != previousSnap.getSnappedEdge()) { // not a duplicate of previous edge
 						if (!currentSnap.getSnappedEdge().isAdjacentTo(previousSnap.getSnappedEdge())) { // not already an adjacent edge to previous
-							DijkstraShortestPath<TaxiNode, TaxiEdge> dsp = new DijkstraShortestPath<TaxiNode, TaxiEdge>(graph, previousSnap.getSnappedEdge().getTnFrom(), currentSnap.getSnappedEdge().getTnFrom());
+							DijkstraShortestPath<TaxiNode, TaxiEdge> dsp = getShortestPathBetween(previousSnap.getSnappedEdge().getTnFrom(), currentSnap.getSnappedEdge().getTnFrom());
 							List<TaxiEdge> shortestPath = dsp.getPathEdgeList();
 							double shortest = dsp.getPathLength();
 							boolean previousFromTo = false; // keeps track of which nodes were closest together (these are the direction travelled on the previous and current edges). 
 							boolean currentFromTo = true; // Here prevFrom and curFrom were closest, to prev was backwards (FromTo==false), and cur was forwards (FromTo==true)
 							
-							dsp = new DijkstraShortestPath<TaxiNode, TaxiEdge>(graph, previousSnap.getSnappedEdge().getTnFrom(), currentSnap.getSnappedEdge().getTnTo());
+							dsp = getShortestPathBetween(previousSnap.getSnappedEdge().getTnFrom(), currentSnap.getSnappedEdge().getTnTo());
 							double length = dsp.getPathLength();
 							if (length < shortest) {
 								shortestPath = dsp.getPathEdgeList();
@@ -803,7 +806,7 @@ public class SnapTracksThread extends Thread {
 								previousFromTo = false; // Here prevFrom and curTo were closest, to prev was backwards (FromTo==false), and cur was backwards (FromTo==false)
 								currentFromTo = false;
 							}
-							dsp = new DijkstraShortestPath<TaxiNode, TaxiEdge>(graph, previousSnap.getSnappedEdge().getTnTo(), currentSnap.getSnappedEdge().getTnFrom());
+							dsp = getShortestPathBetween(previousSnap.getSnappedEdge().getTnTo(), currentSnap.getSnappedEdge().getTnFrom());
 							length = dsp.getPathLength();
 							if (length < shortest) {
 								shortestPath = dsp.getPathEdgeList();
@@ -811,7 +814,7 @@ public class SnapTracksThread extends Thread {
 								previousFromTo = true; // Here prevTo and curFrom were closest, to prev was forwards (FromTo==true), and cur was forwards (FromTo==true)
 								currentFromTo = true;
 							}
-							dsp = new DijkstraShortestPath<TaxiNode, TaxiEdge>(graph, previousSnap.getSnappedEdge().getTnTo(), currentSnap.getSnappedEdge().getTnTo());
+							dsp = getShortestPathBetween(previousSnap.getSnappedEdge().getTnTo(), currentSnap.getSnappedEdge().getTnTo());
 							length = dsp.getPathLength();
 							if (length < shortest) {
 								shortestPath = dsp.getPathEdgeList();
@@ -870,9 +873,11 @@ public class SnapTracksThread extends Thread {
 		}
 		
 		// tidy up any loose ends 
-		trimRouteEnds(snappedRoute);
+		trimRouteEnds(snappedRoute, localDebug);
 		
 		if (localDebug) {
+			printlnSafelyToSystemOut("After end trimming (stage 4.1)");
+			printlnSafelyToSystemOut(ArrayTools.toString(snappedRoute.toArray(), "\t"));
 			debugSnappingsToKML("SnappingStage4.1", null, snappedRoute);
 		}
 		
@@ -950,12 +955,57 @@ public class SnapTracksThread extends Thread {
 		return rval;
 	}
 	
+	private List<GraphPath<TaxiNode, TaxiEdge>> getShortestsPathsBetween(TaxiNode tn0, TaxiNode tn1) {
+		// in the cache?
+		Map<TaxiNode, List<GraphPath<TaxiNode, TaxiEdge>>> pathsForTN0 = kShortestPathsCache.get(tn0);
+		if (pathsForTN0 == null) {
+			pathsForTN0 = new HashMap<>();
+			synchronized (kShortestPathsCache) {
+				kShortestPathsCache.put(tn0, pathsForTN0);
+			}
+		}
+		
+		List<GraphPath<TaxiNode, TaxiEdge>> paths = pathsForTN0.get(tn1);
+		if (paths == null) {
+			KShortestPaths<TaxiNode, TaxiEdge> ksp = new KShortestPaths<TaxiNode, TaxiEdge>(graph, tn0, kForStage2PathReduction);
+			paths = ksp.getPaths(tn1);
+			
+			synchronized (kShortestPathsCache) {
+				pathsForTN0.put(tn1, paths);
+			}
+		}
+		
+		return paths;
+	}
+	
+	private DijkstraShortestPath<TaxiNode, TaxiEdge> getShortestPathBetween(TaxiNode tn0, TaxiNode tn1) {
+		// in the cache?
+		Map<TaxiNode, DijkstraShortestPath<TaxiNode, TaxiEdge>> pathsForTN0 = shortestPathCache.get(tn0);
+		if (pathsForTN0 == null) {
+			pathsForTN0 = new HashMap<>();
+			synchronized (shortestPathCache) {
+				shortestPathCache.put(tn0, pathsForTN0);
+			}
+		}
+		
+		DijkstraShortestPath<TaxiNode, TaxiEdge> dsp = pathsForTN0.get(tn1);
+		if (dsp == null) {
+			dsp = new DijkstraShortestPath<TaxiNode, TaxiEdge>(graph, tn0, tn1);
+			
+			synchronized (shortestPathCache) {
+				pathsForTN0.put(tn1, dsp);
+			}
+		}
+		
+		return dsp;
+	}
+	
 	/**
 	 * Sometimes due to snapping errors we have a track that doesn't start/end on a stand or runway.
 	 * This trims the end edges so that the route does
 	 * really, this method shouldn't need to do anything as we now reduce the ends to a stand and runway already
 	 */
-	private void trimRouteEnds(List<Snapping> routeTaken) {
+	private void trimRouteEnds(List<Snapping> routeTaken, boolean localDebug) {
 		List<Integer> toRemoveFromBeginning = new ArrayList<Integer>();
 		boolean done = false;
 		for (int i = 0; !done && (i < routeTaken.size()); i++) {
@@ -964,6 +1014,10 @@ public class SnapTracksThread extends Thread {
 				done = true;
 			} else {
 				toRemoveFromBeginning.add(i);
+				
+				if (localDebug) {
+					printlnSafelyToSystemOut("Removing from beginning: " + te);
+				}
 			}
 		}
 		
@@ -975,13 +1029,17 @@ public class SnapTracksThread extends Thread {
 				done = true;
 			} else {
 				toRemoveFromEnd.add(i);
+				
+				if (localDebug) {
+					printlnSafelyToSystemOut("Removing from end: " + te);
+				}
 			}
 		}
 		
 		// really, this method shouldn't need to do anything as we now reduce the ends to a stand and runway already
 		// so flag up an error if we get here.
 		if (!toRemoveFromBeginning.isEmpty() || !toRemoveFromEnd.isEmpty()) {
-			printlnSafelyToSystemOut("Needing to remove " + toRemoveFromBeginning.size() + " from start and " + toRemoveFromEnd.size() + " from end");
+			printlnSafelyToSystemOut("Trimming: needing to remove " + toRemoveFromBeginning.size() + " from start and " + toRemoveFromEnd.size() + " from end");
 		}
 		
 		for (int i = 0; i < toRemoveFromEnd.size(); i++) {
@@ -1440,7 +1498,7 @@ public class SnapTracksThread extends Thread {
 	 * No extra snappings are created to make up for singletons
 	 */
 	public List<RouteTaken> splitRoute(RouteTaken routeTaken) {
-		boolean localDebug = false;
+		boolean localDebug = SnapTracks.GLOBAL_DEBUG_SNAPPING_SPLIT;
 		if (localDebug) {
 			printlnSafelyToSystemOut("Splitting route if necessary...");
 		}

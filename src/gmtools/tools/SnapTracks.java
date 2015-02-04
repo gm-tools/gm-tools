@@ -41,6 +41,11 @@ import de.micromata.opengis.kml.v_2_2_0.Style;
  * are available at https://github.com/gm-tools/gm-tools/
  */
 public class SnapTracks {
+	public static boolean GLOBAL_DEBUG_CLEANING = false;
+	public static boolean GLOBAL_DEBUG_SNAPPING = false;
+	public static boolean GLOBAL_DEBUG_SNAPPING_SPLIT = false;
+	public static boolean GLOBAL_DEBUG_LOAD_FILTERING = false;
+	
 	private static final String EDGE_TIMES_SEPARATOR = "\t";
 	
 	/**the most-recently snapped list of aircraft*/
@@ -145,6 +150,14 @@ public class SnapTracks {
 						cp = "-" + cp;
 					}
 					defaultCleaningParams.add(cp);
+				} else if (a.startsWith("-debugC")) {
+					GLOBAL_DEBUG_CLEANING = true;
+				} else if (a.startsWith("-debugS")) {
+					GLOBAL_DEBUG_SNAPPING = true;
+				} else if (a.startsWith("-debugSS")) {
+					GLOBAL_DEBUG_SNAPPING_SPLIT = true;
+				} else if (a.startsWith("-debugL")) {
+					GLOBAL_DEBUG_LOAD_FILTERING = true;
 				}
 			} catch (Exception e) {
 				System.err.println("Error parsing argument " + a);
@@ -382,16 +395,21 @@ public class SnapTracks {
 		int acNum = 0;
 		for (List<RouteTaken> routesForThisAC : routes) {
 			routeIDsPerAircraft[acNum] = new ArrayList<Integer>();
-			for (RouteTaken route : routesForThisAC) {
-				List<Snapping> l = route.getSnappings();
-				
-				int[] path = new int[l.size()];
-				for (int i = 0; i < path.length; i++) {
-					path[i] = at.getGMWTaxiEdgeID(l.get(i).getSnappedEdge());
+			
+			if (routesForThisAC != null) {
+				for (RouteTaken route : routesForThisAC) {
+					if (route != null) {
+						List<Snapping> l = route.getSnappings();
+						
+						int[] path = new int[l.size()];
+						for (int i = 0; i < path.length; i++) {
+							path[i] = at.getGMWTaxiEdgeID(l.get(i).getSnappedEdge());
+						}
+						GroundMovementWriter.Route r = new GroundMovementWriter.Route(path);
+						gmw.addRoute(r);
+						routeIDsPerAircraft[acNum].add(r.getSeqNo()); // store route IDs for each aircraft
+					}
 				}
-				GroundMovementWriter.Route r = new GroundMovementWriter.Route(path);
-				gmw.addRoute(r);
-				routeIDsPerAircraft[acNum].add(r.getSeqNo()); // store route IDs for each aircraft
 			}
 			
 			acNum++;

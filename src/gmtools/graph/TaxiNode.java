@@ -111,6 +111,16 @@ public class TaxiNode implements Comparable<TaxiNode> {
 		return this.id.compareTo(that.id);
 	}
 	
+	@Override
+	public boolean equals(Object obj) {
+		return this.id.equals(((TaxiNode)obj).id);
+	}
+	
+	@Override
+	public int hashCode() {
+		return this.id.hashCode();
+	}
+	
 	public static NodeType gmSpecificationToNodeType(GroundMovementWriter.Node.Specification spec) {
 		switch (spec) {
 		case gate:

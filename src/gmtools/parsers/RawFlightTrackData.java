@@ -1,6 +1,7 @@
 package gmtools.parsers;
 
 import gmtools.common.ArrayTools;
+import gmtools.tools.SnapTracks;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -55,6 +56,15 @@ public class RawFlightTrackData {
 		// keep track of aircraft loaded from different files
 		List<String> ids = new ArrayList<String>();
 		
+		int countRawTracks = 0;
+		int countDroppedBecauseInMultipleFiles = 0;
+		int countNoTracks = 0;
+		int countEmptyProcessedTracks = 0;
+		int countEmptyRawTracks = 0;
+		int countSplitTracks = 0;
+		int countSingleValid = 0;
+		int countMultipleValid = 0;
+		
 		// read file
 		for (String inFile : inFiles) {
 			try {
@@ -67,6 +77,8 @@ public class RawFlightTrackData {
 				
 				String line;
 				while ((line = in.readLine()) != null) {
+					countRawTracks++;
+					
 					String[] cols = line.split(SEPARATOR);
 										
 					int idIndex = columnIndices.getColumnIndex(HEADER_ID, true);
@@ -214,8 +226,14 @@ public class RawFlightTrackData {
 								
 								// run through the coords lists and drop any empty or nearly empty ones
 								for (int i = coordsForThisAircraft.size() - 1; i >= 0; i--) {
-									if (coordsForThisAircraft.get(i).size() < min) {
+									int size = coordsForThisAircraft.get(i).size();
+									if (size < min) {
 										coordsForThisAircraft.remove(i);
+										
+										if (SnapTracks.GLOBAL_DEBUG_LOAD_FILTERING) {
+											System.out.println("Processed track has too few points (" + id + "):" + size);
+										}
+										countEmptyProcessedTracks++;
 									}
 								}
 
@@ -223,6 +241,7 @@ public class RawFlightTrackData {
 									Aircraft ac = new Aircraft(id, origin, destination, coordsForThisAircraft.isEmpty()?new ArrayList<TimeCoordinate>():coordsForThisAircraft.get(0), direction);
 									aircrafts.add(ac);
 									ids.add(id);
+									countSingleValid++;
 								} else { // >1 track at airport. Create multiple AC objects, one for each track. This should reduce need for track splitting after snapping, and avoid nasty jumps in the coords
 									int i = 0;
 									for (List<TimeCoordinate> curCoords : coordsForThisAircraft) {
@@ -230,11 +249,29 @@ public class RawFlightTrackData {
 										Aircraft ac = new Aircraft(subID, origin, destination, curCoords, direction);
 										aircrafts.add(ac);
 										ids.add(subID);
+
+										countSplitTracks++;
 									}
+
+									countMultipleValid++;
 								}
+							} else {
+								countDroppedBecauseInMultipleFiles++;
 							}
+						} else {
+							if (SnapTracks.GLOBAL_DEBUG_LOAD_FILTERING) {
+								System.out.println("No track added:" + id);
+							}
+							
+							countNoTracks++;
 						}
-					} // check for enough columns to include path
+					} else { // check for enough columns to include path
+						if (SnapTracks.GLOBAL_DEBUG_LOAD_FILTERING) {
+							System.out.println("Empty raw:" + id);
+						}
+						
+						countEmptyRawTracks++;
+					}
 				} // loop over file content
 	
 				in.close();
@@ -244,6 +281,16 @@ public class RawFlightTrackData {
 				System.exit(1);
 			}
 		} // end of loop over files
+
+		System.out.println("Loaded " + aircrafts.size() + " aircraft in total after validity checks and splitting.");
+		System.out.println("Raw data contained " + countRawTracks + " across " + inFiles.length + " files");
+		System.out.println("Tracks dropped because they were present in previous files: " + countDroppedBecauseInMultipleFiles);
+		System.out.println("Tracks dropped because the raw data had no points near the airport, on the ground: " + countNoTracks);
+		System.out.println("Tracks dropped because the raw data had too few (<" + min + ") points near airport, on the ground: " + countEmptyProcessedTracks);
+		System.out.println("Tracks dropped because the raw data had no coordinates in the track: " + countEmptyRawTracks);
+		System.out.println("Tracks added because the raw data had multiple visits to the airport: " + countSplitTracks);
+		System.out.println("Aircraft with a single valid track: " + countSingleValid);
+		System.out.println("Aircraft with multiple valid tracks: "+ countMultipleValid);
 
 		return aircrafts;
 	}
