@@ -447,21 +447,27 @@ public class GM2KML {
 					s = "0" + s;
 				}
 			
+				final String colour = "ff"+s+s+"ff";
 				final Style styleTaxiwaySpeed = documentTaxiwaysE.createAndAddStyle().withId("linestyleTaxiway-" + i);
 				styleTaxiwaySpeed.createAndSetLineStyle()
-				.withColor("ff"+s+s+"ff")
+				.withColor(colour)
 				.withWidth(4.0);
 			}
 			if (speeds != null) {
 				for (Map<TaxiEdge, List<Double>> m : speeds.values()) {
 					for (List<Double> l : m.values()) {
 						for (Double d : l) {
-							maxSpeed = Math.max(maxSpeed, d);
+							if (!Double.isInfinite(d)) {
+								maxSpeed = Math.max(maxSpeed, d);
+							}
 						}
 						maxTraffic = Math.max(maxTraffic, l.size());
 					}
 				}
 			}
+
+			System.out.println("Max speed: " + maxSpeed);
+			System.out.println("Max traffic: " + maxTraffic);
 		}
 
 		// render all the edges, possibly coloured according to average speeds
