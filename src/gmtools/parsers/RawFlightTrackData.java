@@ -64,6 +64,9 @@ public class RawFlightTrackData {
 		int countSplitTracks = 0;
 		int countSingleValid = 0;
 		int countMultipleValid = 0;
+		int countMultipleValidTotal = 0;
+		
+		int lastSize = 0;
 		
 		// read file
 		for (String inFile : inFiles) {
@@ -224,6 +227,12 @@ public class RawFlightTrackData {
 									direction = Aircraft.Direction.STOPOFF;
 								}
 								
+								// does the track have multiple visits to the airport in it? 
+								if (SnapTracks.GLOBAL_DEBUG_LOAD_FILTERING) {
+									System.out.println("Multiple ("+coordsForThisAircraft.size()+") tracks found for " + id);
+								}
+								countSplitTracks+= coordsForThisAircraft.size() - 1; // -1 as we're only counting additional tracks
+								
 								// run through the coords lists and drop any empty or nearly empty ones
 								for (int i = coordsForThisAircraft.size() - 1; i >= 0; i--) {
 									int size = coordsForThisAircraft.get(i).size();
@@ -242,19 +251,22 @@ public class RawFlightTrackData {
 									aircrafts.add(ac);
 									ids.add(id);
 									countSingleValid++;
-								} else { // >1 track at airport. Create multiple AC objects, one for each track. This should reduce need for track splitting after snapping, and avoid nasty jumps in the coords
+								} else if (coordsForThisAircraft.size() > 1) { // >1 track at airport. Create multiple AC objects, one for each track. This should reduce need for track splitting after snapping, and avoid nasty jumps in the coords
 									int i = 0;
 									for (List<TimeCoordinate> curCoords : coordsForThisAircraft) {
 										String subID = id + "-" + (i++); 
 										Aircraft ac = new Aircraft(subID, origin, destination, curCoords, direction);
 										aircrafts.add(ac);
 										ids.add(subID);
-
-										countSplitTracks++;
 									}
+									
+									if (SnapTracks.GLOBAL_DEBUG_LOAD_FILTERING) {
+										System.out.println("Multiple ("+coordsForThisAircraft.size()+") tracks found for " + id);
+									}
+									countMultipleValidTotal += coordsForThisAircraft.size();
 
 									countMultipleValid++;
-								}
+								} // ignore ACs with zero tracks 
 							} else {
 								countDroppedBecauseInMultipleFiles++;
 							}
@@ -272,6 +284,11 @@ public class RawFlightTrackData {
 						
 						countEmptyRawTracks++;
 					}
+					
+					if (aircrafts.size() != (lastSize + 1)) {
+						System.out.println(id + ": " + lastSize + "->" + aircrafts.size());
+					}
+					lastSize = aircrafts.size();
 				} // loop over file content
 	
 				in.close();
@@ -290,7 +307,7 @@ public class RawFlightTrackData {
 		System.out.println("Tracks dropped because the raw data had no coordinates in the track: " + countEmptyRawTracks);
 		System.out.println("Tracks added because the raw data had multiple visits to the airport: " + countSplitTracks);
 		System.out.println("Aircraft with a single valid track: " + countSingleValid);
-		System.out.println("Aircraft with multiple valid tracks: "+ countMultipleValid);
+		System.out.println("Aircraft with multiple valid tracks: "+ countMultipleValid + ", (" + countMultipleValidTotal + ") tracks in total");
 
 		return aircrafts;
 	}

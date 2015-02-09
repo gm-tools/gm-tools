@@ -72,6 +72,10 @@ public class SpecifiedGateLocations {
 			System.err.println("Couldn't read data file!");
 			e.printStackTrace();
 			System.exit(1);
+		} catch (NumberFormatException e) {
+			System.err.println("Error parsing data file! Probably either non-numberic data, or non-tab separators used");
+			e.printStackTrace();
+			System.exit(1);
 		}
 		
 		return stands;
