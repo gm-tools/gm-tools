@@ -285,9 +285,6 @@ public class RawFlightTrackData {
 						countEmptyRawTracks++;
 					}
 					
-					if (aircrafts.size() != (lastSize + 1)) {
-						System.out.println(id + ": " + lastSize + "->" + aircrafts.size());
-					}
 					lastSize = aircrafts.size();
 				} // loop over file content
 	

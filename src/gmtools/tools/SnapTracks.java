@@ -4,26 +4,33 @@ import gmtools.common.ArrayTools;
 import gmtools.common.GroundMovementWriter;
 import gmtools.common.KMLUtils;
 import gmtools.common.Legal;
+import gmtools.graph.EdgeClusters;
 import gmtools.graph.TaxiEdge;
 import gmtools.graph.TaxiNode;
 import gmtools.graph.TaxiNode.NodeType;
+import gmtools.parsers.ColumnIndices;
 import gmtools.parsers.RawFlightTrackData;
 import gmtools.parsers.RawFlightTrackData.Aircraft;
 import gmtools.snaptracks.CleaningRawDataOutliers;
 import gmtools.snaptracks.SnapTracksThread;
+import gmtools.snaptracks.SnapTracksThread.EdgeTime;
 import gmtools.snaptracks.SnapTracksThread.RouteTaken;
 import gmtools.snaptracks.SnapTracksThread.Snapping;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import uk.me.jstott.jcoord.LatLng;
 import de.micromata.opengis.kml.v_2_2_0.Document;
@@ -44,9 +51,41 @@ public class SnapTracks {
 	public static boolean GLOBAL_DEBUG_CLEANING = false;
 	public static boolean GLOBAL_DEBUG_SNAPPING = false;
 	public static boolean GLOBAL_DEBUG_SNAPPING_SPLIT = false;
+	public static boolean GLOBAL_DEBUG_SNAPPING_CACHE = false;
 	public static boolean GLOBAL_DEBUG_LOAD_FILTERING = false;
 	
 	private static final String EDGE_TIMES_SEPARATOR = "\t";
+	
+	private static final String EDGETIMESDETAILS_OUT_HEADER_THREAD = "thread";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_INDEX = "index";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_AIRCRAFTNUMBER = "aircraftNumber";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_EDGELABEL = "edgeLabel";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_EDGEID = "edgeID";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_DISTANCE = "distance";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_TIME = "time";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_CUMULATIVEDISTANCE = "cumulativeDistance";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_CUMULATIVETIME = "cumulativeTime";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_ESTIMATED = "Estimated";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_DEBUGTEXT = "DebugText";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_PREVSNAPPING = "PrevSnapping";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING = "CurrentSnapping";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_NEXTSNAPPING = "NextSnapping";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_PREVSNAPPING_ORGCOORD = "PrevSnapping_OrgCoord";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_PREVSNAPPING_TIMEATCOORD = "PrevSnapping_TimeAtCoord";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_PREVSNAPPING_DISTANCEREMAININGONEDGE = "PrevSnapping_DistanceRemainingOnEdge";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING1_ORGCOORD = "CurrentSnapping1_OrgCoord";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING1_TIMEATCOORD = "CurrentSnapping1_TimeAtCoord";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING1_DISTANCEALONGEDGE = "CurrentSnapping1_DistanceAlongEdge";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING2_ORGCOORD = "CurrentSnapping2_OrgCoord";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING2_TIMEATCOORD = "CurrentSnapping2_TimeAtCoord";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING2_DISTANCEREMAININGONEDGE = "CurrentSnapping2_DistanceRemainingOnEdge";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_NEXTSNAPPING_ORGCOORD = "NextSnapping_OrgCoord";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_NEXTSNAPPING_TIMEATCOORD = "NextSnapping_TimeAtCoord";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_NEXTSNAPPING_DISTANCEALONGEDGE = "NextSnapping_DistanceAlongEdge";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_FRACTION1 = "Fraction1";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_FRACTION2 = "Fraction2";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_TIME1 = "Time1";
+	private static final String EDGETIMESDETAILS_OUT_HEADER_TIME2 = "Time2]";
 	
 	/**the most-recently snapped list of aircraft*/
 	private List<Aircraft> aircraft;
@@ -63,6 +102,8 @@ public class SnapTracks {
 	/**wrapper for the graphs*/
 	private TaxiGen taxiGen;
 	
+	private EdgeClusters edgeClusters;
+	
 	/**
 	 *  Load a GM file, load a set of flight tracks, snap them, and write out a corresponding GM file
 	 *  Usage: SnapTracks inputGMfile prefixForOutputFiles airportID flightTrackFile1;flightTrackFile2;flightTrackFile3 [options]
@@ -76,6 +117,7 @@ public class SnapTracks {
 	 *    -threads=4 : number of threads to use (default is whatever is returned by JVM for Runtime.getRuntime().availableProcessors())
 	 *    -step=10 : step width in metres (default=10)
 	 *    -steps=50 : number of steps out (default=50)
+	 *    -d=10 : distance from an edge in metres for a coordinate to snap to it (default=10)
 	 *    -b=1800 : if there is a gap of more than this in metres between points, split into two separate tracks (<0 to disable) (default=1800)
 	 *    -min=n : minimum number of points in a track (after cleaning) near airport before we'll try snapping (default=10)
 	 *    -clean_XXX=YYY : any parameters that need passed to cleaning algorithm
@@ -84,6 +126,7 @@ public class SnapTracks {
 //		args = "MAN_GM.txt MAN_GM_Test MAN MAN_TestTaxiTimes.txt -alat=53.35 -alon=-2.27 -steps=0".split("\\s+");
 //		args = "I:/Data/STR/STR_GM.txt STR_GMTest_Snapped STRTest export/STRTest.txt -steps=100 -clean_M=15 -alat=48.691 -alon=9.216 -end=10".split(" ");
 		
+		boolean snapping = true; // default mode is to snap. Otherwise, load the specified EdgeTimeDetails file and try to retrieve the snappings from there
 		String gmFile = null; // input GM file with airport layout
 		String filePrefix = null; // prefix for snapped tracks and times output files
 		String airportID = null; // used to determine whether flights are inbound or outbound
@@ -97,6 +140,10 @@ public class SnapTracks {
 		boolean cleanTracks = true;
 		long breakTracksIfGapOverS = 30 * 60; // if there is a gap of more than this between points, split into two separate tracks (<0 to disable)
 		int min = 10;
+		double snapDistanceM = 10;
+		String etdFile = null;
+		
+		final double airportRadius = 0.1;
 		
 		int numberOfThreads = Runtime.getRuntime().availableProcessors();
 		
@@ -142,21 +189,28 @@ public class SnapTracks {
 					endFlight = Integer.parseInt(a.substring(5));
 				} else if (a.equals("-snapped")) {
 					flightTracksFilesAlreadySnapped = true;
-				} else if (a.startsWith("-b")) {
+				} else if (a.startsWith("-b=")) {
 					breakTracksIfGapOverS = Long.parseLong(a.substring(3));
+				} else if (a.startsWith("-d=")) {
+					snapDistanceM = Double.parseDouble(a.substring(3));
+				} else if (a.startsWith("-etd=")) {
+					snapping = false;
+					etdFile = a.substring(5);
 				} else if (a.startsWith("-clean_")) {
 					String cp = a.substring(7);
 					if (!cp.startsWith("-")) { // make sure there's a - at the start of the param for passing to CleaningRawDataOutliers.main()
 						cp = "-" + cp;
 					}
 					defaultCleaningParams.add(cp);
-				} else if (a.startsWith("-debugC")) {
+				} else if (a.equalsIgnoreCase("-debugC")) {
 					GLOBAL_DEBUG_CLEANING = true;
-				} else if (a.startsWith("-debugS")) {
+				} else if (a.equalsIgnoreCase("-debugS")) {
 					GLOBAL_DEBUG_SNAPPING = true;
-				} else if (a.startsWith("-debugSS")) {
+				} else if (a.equalsIgnoreCase("-debugSS")) {
 					GLOBAL_DEBUG_SNAPPING_SPLIT = true;
-				} else if (a.startsWith("-debugL")) {
+				} else if (a.equalsIgnoreCase("-debugSC")) {
+					GLOBAL_DEBUG_SNAPPING_CACHE = true;
+				} else if (a.equalsIgnoreCase("-debugL")) {
 					GLOBAL_DEBUG_LOAD_FILTERING = true;
 				}
 			} catch (Exception e) {
@@ -185,6 +239,7 @@ public class SnapTracks {
 		System.out.println("  Threads:" + numberOfThreads);
 		System.out.println("  Displacement step size, count:" + stepWidthMetres + ", " + maxStepsOut);
 		System.out.println("  Min points near airport required to try snapping:" + min);
+		System.out.println("  Max distance for coord to snap to edge:" + snapDistanceM);
 		System.out.println("  Flight track files:" + ArrayTools.toString(flightTracksFiles, ","));
 		System.out.println();
 		
@@ -198,6 +253,8 @@ public class SnapTracks {
 		
 		// create an autotaxiways object from existing GM file
 		TaxiGen at = new TaxiGen(gmw); 
+		
+		EdgeClusters edgeClusters = new EdgeClusters(at, 10, snapDistanceM);
 		
 		// clean track if necessary
 		if (cleanTracks) {
@@ -216,18 +273,34 @@ public class SnapTracks {
 			}
 		}
 		
+		// load raw flight tracks
+		List<Aircraft> allAircraft = RawFlightTrackData.loadAircraft(flightTracksFilesAlreadySnapped, flightTracksFilesIncludedIntervals, "", flightTracksFiles, latAirport, lonAirport, airportRadius, airportID, breakTracksIfGapOverS, min); // this loads coords as lat/lon, snap method needs lon/lat, so swap below
+		SnapTracks stm = new SnapTracks(at, edgeClusters);
+		
 		// snap tracks
-		SnapTracks stm = new SnapTracks(at);
-		stm.loadAndSnapAircraft(flightTracksFilesAlreadySnapped, flightTracksFilesIncludedIntervals, "", flightTracksFiles, latAirport, lonAirport, 0.1, airportID, filePrefix, numberOfThreads, breakTracksIfGapOverS, startFlight, endFlight, stepWidthMetres, maxStepsOut, min);
-	
-		// write out updated GM file
-		Map<RouteTaken, Integer> gmwIDsForACs = addSnappedFlightTracksToGMFile(gmw, at, stm.aircraft, stm.aircraftRoutes);
-		gmw.writeFile(gmOutFile);
+		if (snapping) {
+			stm.loadAndSnapAircraft(flightTracksFilesAlreadySnapped, flightTracksFilesIncludedIntervals, "", allAircraft, latAirport, lonAirport, airportRadius, airportID, filePrefix, numberOfThreads, breakTracksIfGapOverS, startFlight, endFlight, stepWidthMetres, maxStepsOut, min, snapDistanceM);
 		
-		System.out.println("Writing edge taxi times");
-		stm.edgeTaxiTimesToTSV(filePrefix + "_EdgeTaxiTimes.txt", gmwIDsForACs, at);
-		
-		graphNodesAndEdgesToKML(filePrefix + "_Snapped.kml", at, stm.flightpaths, stm.flightNames, stm.aircraft, stm.aircraftRoutes, gmwIDsForACs);
+			// write out updated GM file
+			Map<RouteTaken, Integer> gmwIDsForACs = addSnappedFlightTracksToGMFile(gmw, at, stm.aircraft, stm.aircraftRoutes);
+			gmw.writeFile(gmOutFile);
+			
+			System.out.println("Writing edge taxi times");
+			stm.edgeTaxiTimesToTSV(filePrefix + "_EdgeTaxiTimes.txt", gmwIDsForACs, at);
+			
+			graphNodesAndEdgesToKML(filePrefix + "_Snapped.kml", at, stm.flightpaths, stm.flightNames, stm.aircraft, stm.aircraftRoutes, gmwIDsForACs);
+		} else {
+			stm.loadSnappedRoutesFromEdgeTimeDetails(allAircraft, etdFile);
+			
+			// write out updated GM file
+			Map<RouteTaken, Integer> gmwIDsForACs = addSnappedFlightTracksToGMFile(gmw, at, allAircraft, stm.aircraftRoutes);
+			gmw.writeFile(gmOutFile);
+			
+			System.out.println("Writing edge taxi times");
+			stm.edgeTaxiTimesToTSV(filePrefix + "_EdgeTaxiTimes.txt", gmwIDsForACs, at);
+			
+			// can't do kml at the moment because the original tracks still need extracted
+		}
 	}
 	
 	public static void printUsage() {
@@ -244,6 +317,7 @@ public class SnapTracks {
 		System.out.println("   -threads=4 : number of threads to use (default is whatever is returned by JVM for Runtime.getRuntime().availableProcessors())");
 		System.out.println("   -step=10 : step width in metres (default=10)");
 		System.out.println("   -steps=50 : number of steps out (default=50)");
+		System.out.println("   -d=10 : distance from an edge in metres for a coordinate to snap to it (default=10)");
 		System.out.println("   -b=1800 : if there is a gap of more than this in metres between points, split into two separate tracks (<0 to disable) (default=1800)");
 		System.out.println("   -min=n : minimum number of points in a track (after cleaning) near airport before we'll try snapping (default=10)");
 		System.out.println("   -clean_XXX=YYY : any parameters that need passed to cleaning algorithm");
@@ -251,8 +325,9 @@ public class SnapTracks {
 	}
 
 	@SuppressWarnings("unchecked")
-	public SnapTracks(TaxiGen at) {
+	public SnapTracks(TaxiGen at, EdgeClusters ec) {
 		this.taxiGen = at;
+		this.edgeClusters = ec;
 		this.aircraft = null;
 		
 		// no aircraft to snap yet
@@ -277,7 +352,7 @@ public class SnapTracks {
 	 * @param min - min number of points in a track (after cleaning) near airport before we'll try snapping
 	 */
 	@SuppressWarnings("unchecked")
-	private void loadAndSnapAircraft(boolean flightTracksFilesAlreadySnapped, boolean flightTracksFilesIncludedIntervals, String basedir, String[] flightTracksFiles, double latAirport, double lonAirport, double airportRadius, String airportID, String filePrefix, int numThreads, long breakTracksIfGapOverS, int startFlight, int endFlight, double stepWidthMetres, int maxStepsOut, int min) {
+	private void loadAndSnapAircraft(boolean flightTracksFilesAlreadySnapped, boolean flightTracksFilesIncludedIntervals, String basedir, List<Aircraft> allAircraft, double latAirport, double lonAirport, double airportRadius, String airportID, String filePrefix, int numThreads, long breakTracksIfGapOverS, int startFlight, int endFlight, double stepWidthMetres, int maxStepsOut, int min, double snapDistanceM) {
 		System.out.println("Snapping flights");
 		
 		PrintStream snappedOut = null;
@@ -294,14 +369,14 @@ public class SnapTracks {
 		try {
 			if (flightTracksFilesIncludedIntervals) {
 				timesOut = new PrintStream(new FileOutputStream(filePrefix + "_EdgeTimeDetails.txt"));
-				timesOut.println("thread" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "index" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "aircraftNumber" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "edgeLabel" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "edgeID" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "distance" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "time" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "cumulativeDistance" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "cumulativeTime" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "Estimated" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "DebugText" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "PrevSnapping" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "NextSnapping" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "PrevSnapping_OrgCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "PrevSnapping_TimeAtCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "PrevSnapping_DistanceRemainingOnEdge" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping1_OrgCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping1_TimeAtCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping1_DistanceAlongEdge" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping2_OrgCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping2_TimeAtCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping2_DistanceRemainingOnEdge" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "NextSnapping_OrgCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "NextSnapping_TimeAtCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "NextSnapping_DistanceAlongEdge" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "Fraction1" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "Fraction2" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "Time1" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "Time2]");
+				timesOut.println("thread" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "index" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "aircraftNumber" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "edgeLabel" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "edgeID" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "distance" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "time" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "cumulativeDistance" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "cumulativeTime" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "Estimated" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "DebugText" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "PrevSnapping" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "NextSnapping" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "PrevSnapping_OrgCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "PrevSnapping_TimeAtCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "PrevSnapping_DistanceRemainingOnEdge" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping1_OrgCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping1_TimeAtCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping1_DistanceAlongEdge" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping2_OrgCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping2_TimeAtCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "CurrentSnapping2_DistanceRemainingOnEdge" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "NextSnapping_OrgCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "NextSnapping_TimeAtCoord" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "NextSnapping_DistanceAlongEdge" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "Fraction1" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "Fraction2" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "Time1" + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + "Time2");
+				timesOut.println(EDGETIMESDETAILS_OUT_HEADER_THREAD + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_INDEX + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_AIRCRAFTNUMBER + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_EDGELABEL + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_EDGEID + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_DISTANCE + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_TIME + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_CUMULATIVEDISTANCE + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_CUMULATIVETIME + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_ESTIMATED + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_DEBUGTEXT + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_PREVSNAPPING + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_NEXTSNAPPING + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_PREVSNAPPING_ORGCOORD + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_PREVSNAPPING_TIMEATCOORD + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_PREVSNAPPING_DISTANCEREMAININGONEDGE + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING1_ORGCOORD + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING1_TIMEATCOORD + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING1_DISTANCEALONGEDGE + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING2_ORGCOORD + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING2_TIMEATCOORD + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_CURRENTSNAPPING2_DISTANCEREMAININGONEDGE + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_NEXTSNAPPING_ORGCOORD + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_NEXTSNAPPING_TIMEATCOORD + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_NEXTSNAPPING_DISTANCEALONGEDGE + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_FRACTION1 + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_FRACTION2 + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_TIME1 + SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR + EDGETIMESDETAILS_OUT_HEADER_TIME2);
 			}
 		} catch (IOException e) {
 			System.err.println("Error opening snap file");
 			e.printStackTrace();
 		}
 		
-		List<Aircraft> allAircraft = RawFlightTrackData.loadAircraft(flightTracksFilesAlreadySnapped, flightTracksFilesIncludedIntervals, "", flightTracksFiles, latAirport, lonAirport, airportRadius, airportID, breakTracksIfGapOverS, min); // this loads coords as lat/lon, snap method needs lon/lat, so swap below
 		this.aircraft = new ArrayList<Aircraft>();
 
 		if ((startFlight > 0) || (endFlight > startFlight)) {
@@ -334,7 +409,7 @@ public class SnapTracks {
 		}
 		SnapTracksThread[] snapThreads = new SnapTracksThread[numThreads];
 		for (int i = 0; i < snapThreads.length; i++) {
-			snapThreads[i] = new SnapTracksThread(i, aircraft, indicesToProcess, taxiGen.getGraphWholeAirport(), flightpaths, aircraftRoutes, flightNames, flightTracksFilesIncludedIntervals, stepWidthMetres, maxStepsOut, taxiGen, snappedOut, timesOut);
+			snapThreads[i] = new SnapTracksThread(i, aircraft, indicesToProcess, taxiGen.getGraphWholeAirport(), flightpaths, aircraftRoutes, flightNames, flightTracksFilesIncludedIntervals, stepWidthMetres, maxStepsOut, snapDistanceM, taxiGen, edgeClusters, snappedOut, timesOut);
 			snapThreads[i].start();
 		}
 		
@@ -504,6 +579,165 @@ public class SnapTracks {
 		} // end of loop over ACs
 		
 		return gmwIDsForACs;
+	}
+	
+	/**
+	 * the snapping threads write to XXX_EdgeTimeDetails.txt as they go. if for some reason the run failed and couldn't write the GM and _EdgeTaxiTimes files
+	 * then this will load the snapped tracks from the EdgeTimeDetails ready to process without needing to re-snap (unfortunately at the moment, this doesn't
+	 * have any indication of unsnapped tracks, and we don't have information about displacement etc so we can't used this to resume a run all that easily.
+	 * Need to think some more about that. Might be possible to get the displacement based on the org coords in the details file - better would be just to
+	 * change the purpose of this file slightly, adding the missing data)
+	 * this still loads the aircraft details from the original data - this is matched against AircraftNumber in the EdgeTimeDetails file
+	 * */
+	@SuppressWarnings("unchecked")
+	private void loadSnappedRoutesFromEdgeTimeDetails(List<Aircraft> aircraft, String edgeTimeDetailsFile) {
+		System.out.println("Attempting to retrieve data for " + aircraft.size() + " aircraft.");
+		
+		this.aircraft = aircraft;
+		
+		// just needed to access some methods later on
+		SnapTracksThread stt = new SnapTracksThread(0, aircraft, Collections.<Integer>emptyList(), this.taxiGen.getGraphWholeAirport(), null, this.aircraftRoutes, this.flightNames, false, 0, 0, 0, this.taxiGen, this.edgeClusters, null, null);
+		
+		// read file first - copy lines for each aircraft into a separate list
+		List<List<String[]>> linesForEachAircraft = new ArrayList<>(aircraft.size());
+		for (int i = 0; i < aircraft.size(); i++) {
+			linesForEachAircraft.add(null);
+		}
+		
+		int count = 0;
+		ColumnIndices columnIndices = null;
+		
+		try {
+			BufferedReader in = new BufferedReader(new FileReader(edgeTimeDetailsFile));
+			
+			String[] header = in.readLine().split(SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR);
+			columnIndices = new ColumnIndices(header, edgeTimeDetailsFile);
+			
+			String line;
+			while ((line = in.readLine()) != null) {
+				String[] cols = line.split(SnapTracksThread.EDGETIMESDETAILS_OUT_SEPARATOR);
+				
+				// parse AC number
+				int aircraftNumber = Integer.parseInt(cols[columnIndices.getColumnIndex(EDGETIMESDETAILS_OUT_HEADER_AIRCRAFTNUMBER, true)]);
+				
+				// add line to store
+				List<String[]> l = linesForEachAircraft.get(aircraftNumber);
+				if (l == null) {
+					l = new ArrayList<>();
+					linesForEachAircraft.set(aircraftNumber, l);
+					count++;
+				}
+				
+				l.add(cols);
+			}
+			
+			in.close();
+		} catch (IOException e) {
+			System.err.println("Exception when reading EdgeTimeDetails file " + edgeTimeDetailsFile);
+			e.printStackTrace();
+			System.exit(1);
+		}
+		
+		System.out.println("Found tracks for " + count + " aircraft before stage 2 splitting.");
+		
+		// need to update this.aircraftRoutes and this.aircraft - currently we can also do names, might as well instantiate all of the following
+		this.aircraftRoutes = new List[aircraft.size()];
+		this.flightpaths = new LatLng[aircraft.size()][][];
+		this.flightNames = new String[aircraft.size()];
+		for (int aircraftNum = 0; aircraftNum < aircraft.size(); aircraftNum++) {
+			List<String[]> lines = linesForEachAircraft.get(aircraftNum);
+			if (lines != null) {
+				System.out.println("Processing AC " + aircraftNum);
+				
+				// create snappings representing the lines
+				List<Snapping> snappings = new ArrayList<>();
+				List<EdgeTime> edgeTimes = new ArrayList<>();
+				
+				// add first edge's times (unknown) - (for which there's no timing so it doesn't appear)
+				// details are in the first line of "lines"
+				snappings.add(Snapping.fromToString(lines.get(0)[columnIndices.getColumnIndex(EDGETIMESDETAILS_OUT_HEADER_PREVSNAPPING, true)], this.taxiGen));
+				edgeTimes.add(new EdgeTime(Double.NaN, null, null));
+				
+				for (String[] line : lines) {
+					TaxiEdge te = this.taxiGen.getEdgeByGMWId(Integer.parseInt(line[columnIndices.getColumnIndex(EDGETIMESDETAILS_OUT_HEADER_EDGEID, true)]));
+					
+					//System.out.println("Found edge " + te);
+					
+					Snapping snapping = new Snapping(te, 1, false);
+					snappings.add(snapping);
+					
+					if (line[columnIndices.getColumnIndex(EDGETIMESDETAILS_OUT_HEADER_DEBUGTEXT, true)].equals("Successful")) {
+						long inTime = Long.parseLong(line[columnIndices.getColumnIndex(EDGETIMESDETAILS_OUT_HEADER_TIME1, true)]);
+						long outTime = Long.parseLong(line[columnIndices.getColumnIndex(EDGETIMESDETAILS_OUT_HEADER_TIME2, true)]);
+						double time = Double.parseDouble(line[columnIndices.getColumnIndex(EDGETIMESDETAILS_OUT_HEADER_TIME, true)]);
+						
+						EdgeTime edgeTime = new EdgeTime(time, inTime, outTime);
+						edgeTimes.add(edgeTime);
+					} else { // debug text is "PrevOrNextEdgeWasSame"
+						EdgeTime edgeTime = new EdgeTime(Double.NaN, null, null);
+						edgeTimes.add(edgeTime);
+					}
+				}
+				
+				// taken from calcTimesToTravelEdges()
+				// add last edge's times
+//				Long secondLastOutTime = rval.get(rval.size() - 1).getOutTime();
+//				rval.add(new EdgeTime(Double.NaN, secondLastOutTime, null)); // we can't calc last time because we have no points beyond edge end
+				snappings.add(Snapping.fromToString(lines.get(lines.size()-1)[columnIndices.getColumnIndex(EDGETIMESDETAILS_OUT_HEADER_NEXTSNAPPING, true)], this.taxiGen));
+				edgeTimes.add(new EdgeTime(Double.NaN, null, null));
+				
+				// some final updates to figure out times that may have been missed based on neighbouring edges' times
+				for (int i = 0; i < (edgeTimes.size() - 1); i++) {
+					if ((edgeTimes.get(i).getInTime() == null) && (i > 0)) {
+						if ((snappings.get(i-1).getSnappedEdge() != snappings.get(i).getSnappedEdge())) { // prev edge different to current, we can still get the in-time
+							edgeTimes.get(i).setInTime(edgeTimes.get(i-1).getOutTime());
+						}
+					}
+					if ((edgeTimes.get(i).getInTime() == null) && (i < (snappings.size() - 1))) {
+						if ((snappings.get(i).getSnappedEdge() != snappings.get(i+1).getSnappedEdge())) { // next edge different to current, we can still get the out-time
+							edgeTimes.get(i).setOutTime(edgeTimes.get(i+1).getInTime());
+						}
+					}
+				}
+				
+//				System.out.println("=======================");
+//				for (Snapping s : snappings) {
+//					System.out.println(s);
+//				}
+//				System.out.println("=======================");
+				
+				// now calc directions and create route object
+				List<Snapping> snappingsBetweenNodes = new ArrayList<Snapping>(); // this is different to route; it will have duplicates and nulls as it represents the actual edges travelled over in the order they were travelled. However, any edges here will be in routeEdges, in the same order
+				List<Boolean> snappingsBetweenNodesDirection = new ArrayList<Boolean>();
+				SnapTracksThread.snappingListToNodeList(snappings, snappingsBetweenNodes, snappingsBetweenNodesDirection); // don't care about the node list that this method generates
+				RouteTaken routeTaken = new RouteTaken(snappingsBetweenNodes, snappingsBetweenNodesDirection);		
+				routeTaken.setTimesTaken(edgeTimes);
+				
+//				System.out.println("+++++++++++++++++++++++");
+//				for (Snapping s : snappingsBetweenNodes) {
+//					System.out.println(s);
+//				}
+//				System.out.println("+++++++++++++++++++++++");
+		
+				// removeRunwaysFromRoute(RouteTaken), called after time calcs in snapRouteToGraph()
+				SnapTracksThread.removeRunwaysFromRoute(routeTaken);
+				
+				// split routes method in STT class is called after snapRouteToGraph() returns
+				List<RouteTaken> splitRoutes = stt.splitRoute(routeTaken);
+				
+//				if (splitRoutes.size() > 1) {
+//					System.out.println("SPLIT " + splitRoutes.size());
+//				}
+				
+				aircraftRoutes[aircraftNum] = splitRoutes;
+			} else {
+				aircraftRoutes[aircraftNum]  = new ArrayList<RouteTaken>();
+				System.out.println("No data for AC " + aircraftNum);
+			}
+			
+			// we can always add the following data for an aircraft
+			flightNames[aircraftNum] = aircraft.get(aircraftNum).toString();
+		}
 	}
 	
 	/**in KML, nodes identified by GM_ID-AT_ID-meta and edges by GM_ID-AT_unique_name*/

@@ -4,6 +4,7 @@ import gmtools.common.ArrayTools;
 import gmtools.common.Geography;
 import gmtools.common.KMLUtils;
 import gmtools.common.Maths;
+import gmtools.graph.EdgeClusters;
 import gmtools.graph.TaxiEdge;
 import gmtools.graph.TaxiEdge.EdgeType;
 import gmtools.graph.TaxiNode;
@@ -26,6 +27,9 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.jgrapht.GraphPath;
 import org.jgrapht.alg.DijkstraShortestPath;
@@ -86,6 +90,8 @@ public class SnapTracksThread extends Thread {
 
 	private TaxiGen taxiGen;
 	
+	private EdgeClusters edgeClusters;
+	
 	/**snapped version of the original flight track; useful to rerun snapping process without so much work*/
 	private PrintStream snappedOut;
 	
@@ -94,17 +100,17 @@ public class SnapTracksThread extends Thread {
 	
 	// alg params
 	private int kForStage2PathReduction;
+	private double snapDistanceM;
 	
-	private static Map<TaxiNode,Map<TaxiNode,List<GraphPath<TaxiNode, TaxiEdge>>>> kShortestPathsCache = new HashMap<>();
-	private static Map<TaxiNode,Map<TaxiNode,DijkstraShortestPath<TaxiNode, TaxiEdge>>> shortestPathCache = new HashMap<>();
-	
+	private static Map<TaxiNode,Map<TaxiNode,List<GraphPath<TaxiNode, TaxiEdge>>>> kShortestPathsCache = new ConcurrentHashMap<>();
+	private static Map<TaxiNode,Map<TaxiNode,DijkstraShortestPath<TaxiNode, TaxiEdge>>> shortestPathCache = new ConcurrentHashMap<>();
 	
 	/**
 	 * @param TaxiGen is a param so we can get the GMW IDs for edges and nodes
 	 * @param startIndex inclusive
 	 * @param endIndex exclusive
 	 */
-	public SnapTracksThread(int threadNum, List<Aircraft> aircraft, List<Integer> indicesToProcess, WeightedMultigraph<TaxiNode,TaxiEdge> graph, LatLng[][][] flightpaths, List<RouteTaken>[] aircraftRoutes, String[] flightNames, boolean flightTracksFilesIncludedIntervals, double stepWidthMetres, int maxStepsOut, TaxiGen at, PrintStream snappedOut, PrintStream timesOut) {
+	public SnapTracksThread(int threadNum, List<Aircraft> aircraft, List<Integer> indicesToProcess, WeightedMultigraph<TaxiNode,TaxiEdge> graph, LatLng[][][] flightpaths, List<RouteTaken>[] aircraftRoutes, String[] flightNames, boolean flightTracksFilesIncludedIntervals, double stepWidthMetres, int maxStepsOut, double snapDistanceM, TaxiGen at, EdgeClusters edgeClusters, PrintStream snappedOut, PrintStream timesOut) {
 		super("SnapTracksThread" + threadNum);
 		this.threadNum = threadNum;
 		this.aircraft = aircraft;
@@ -118,12 +124,15 @@ public class SnapTracksThread extends Thread {
 		this.maxStepsOut = maxStepsOut;
 		
 		this.taxiGen = at;
+		this.edgeClusters = edgeClusters;
+		
 		this.snappedOut = snappedOut;
 		this.timesOut = timesOut;
 		
 		this.indicesToProcess = indicesToProcess;
 		
 		this.kForStage2PathReduction = 10;
+		this.snapDistanceM = snapDistanceM;
 	}
 	
 	/**if there are any indices left to process, grab one and process it*/
@@ -159,12 +168,13 @@ public class SnapTracksThread extends Thread {
 			boolean success = false;
 			List<TimeCoordinate> displacedCoords = null;
 			if (routeTaken.getSnappings().size() > 0) { // if route was successfully snapped...
+				printlnSafelyToSystemOut("AC " + currentAircraft + " Snapped successfully without displacement");
 				success = true; // don't need to do any more!
 			} else {
 				// if not successfully snapped, it might just need displaced. Two ways to do this:
 				// 1. look at the coords at either end for a straight line. This will be the runway. Then coords to fit the true runways
 				// 2. (less brittle but more time consuming) walk in a spiral out from the original coords - this is the approach in the paper 
-				printlnSafelyToSystemOut("no routes found - trying some variations...");
+				printlnSafelyToSystemOut("no routes found - trying some displacements...");
 				boolean done = false;
 				
 				// get all possible displaced points
@@ -248,7 +258,7 @@ public class SnapTracksThread extends Thread {
 				List<TaxiEdge> snappedEdges = SnapTracksThread.snappingListToEdgeList(snapped);
 				snappedStandNodes = extractStandNodesFromPath(snappedEdges);
 				snappedRunwayNodes = extractRunwayNodesFromPath(snappedEdges);
-			}
+			} // end of if(success)
 			
 			// even if unsuccessful, add original flight track to output
 			snappedCoords[0] = new LatLng[newCoords.size()]; // the original track coords
@@ -311,6 +321,8 @@ public class SnapTracksThread extends Thread {
 	 * finally, if we have runways at either end, split at the visited stand in to two routes.
 	 * @param if harsh is enabled, snap count must be 80% rather than 50%. this is used once displacing to reduce false positives (and used all the time in the work for the paper)
 	 * @return the actual route taken - where u-turns take place, an edge appears more than once
+	 * TODO - writing out of snapped tracks as we go should be much cleaner, to allow for a "resume" function if we fail part-way through
+	 * (can't easily write GM file as we go because it needs routes and aircraft written to different places) 
 	 */
 	public RouteTaken snapRouteToGraph(List<TimeCoordinate> track, boolean harsh, int aircraftNumberForOutput) {
 		boolean localDebug = SnapTracks.GLOBAL_DEBUG_SNAPPING; // enable to output KML and debugging data after each step
@@ -321,7 +333,7 @@ public class SnapTracksThread extends Thread {
 		// the default is to return an empty route
 		final RouteTaken DEFAULT = new RouteTaken(new ArrayList<Snapping>(), new ArrayList<Boolean>());
 		
-		double snapDistance = 10; // metres
+		double snapDistance = this.snapDistanceM; // metres
 		double minNumberOfSnappedEdges = harsh ? (MIN_SNAPPED_EDGES_HARSH * track.size()) : (MIN_SNAPPED_EDGES_RELAXED * track.size()); // if more than half the coords are unsnapped, something is very wrong!
 		
 		if (track.isEmpty()) { // no route? Don't bother.
@@ -336,9 +348,14 @@ public class SnapTracksThread extends Thread {
 		List<List<Snapping>> snaps = new ArrayList<List<Snapping>>(track.size());
 		for (int i = 0; i < track.size(); i++) {
 			List<Snapping> thisCoordSnaps = new ArrayList<Snapping>();
+
+			// these are for debugging, especially points that didn't snap to any edge
+			double closestDistance = Double.POSITIVE_INFINITY;
+			TaxiEdge closestEdge = null;
 			
 			// for every edge, find the nearest point, and if within the snap distance, keep that point and that edge handy
-			for (TaxiEdge te : graph.edgeSet()) {
+			// TODO room for efficiency improvement here: we could easily skip edges that are nowhere near the point - look at ends and only keep if one end is within range, or the ends are either side of this a time-coordinate
+			for (TaxiEdge te : edgeClusters.getEdgesNearPoint(track.get(i).getCoord())) {
 				double[] nearestPointD = TaxiGen.nearestPointOnLine(track.get(i).getCoord().getLat(), track.get(i).getCoord().getLng(), te.getTnFrom().getLatCoordinate(), te.getTnFrom().getLonCoordinate(), te.getTnTo().getLatCoordinate(), te.getTnTo().getLonCoordinate());
 				LatLng nearestPoint = new LatLng(nearestPointD[0], nearestPointD[1]);
 				double distance;
@@ -359,6 +376,14 @@ public class SnapTracksThread extends Thread {
 					distance = Geography.distance(track.get(i).getCoord(), nearestPoint);//TaxiGen.distance(coords[i][1], coords[i][0], nearestPoint[0], nearestPoint[1]);
 				}
 
+				// for debug only, so skip if not debugging
+				if (localDebug) {
+					if (distance < closestDistance) {
+						closestDistance = distance;
+						closestEdge = te;
+					}
+				}
+				
 				if (distance < snapDistance) {
 					Snapping s = new Snapping(track.get(i), nearestPoint, distance, te, track.get(i).getTimestamp() * 1000, false);
 					thisCoordSnaps.add(s);
@@ -371,18 +396,13 @@ public class SnapTracksThread extends Thread {
 
 			if (thisCoordSnaps.size() > 0) {
 				snaps.add(thisCoordSnaps);
+			} else {
+				if (localDebug) {
+					printlnSafelyToSystemOut(i + "\t" + track.get(i) + "\tFAILED_TO_SNAP\tClosestEdgeWas" + closestEdge + "\tAt" + closestDistance + "m");
+				}
 			}
 		}
-		
-		if (localDebug) {
-			printlnSafelyToSystemOut("Found " + snaps.size() + " snappings, using " + track.size() + " coords, min snapped required " + minNumberOfSnappedEdges);
-		}
-		
-		// step 7
-		if (snaps.isEmpty() || snaps.size() < minNumberOfSnappedEdges) { // not enough edges were snapped. give up.
-			return DEFAULT;
-		}
-		
+
 		if (localDebug) {
 			debugSnappingsToKML("SnappingStage1", snaps, null);
 		}
@@ -393,6 +413,15 @@ public class SnapTracksThread extends Thread {
 				List<Snapping> l = snaps.get(i);
 				printlnSafelyToSystemOut(i + ","+track.get(i) + ","+ l.size() + ArrayTools.toString(l.toArray()));
 			}
+		}
+		
+		if (localDebug) {
+			printlnSafelyToSystemOut("Found " + snaps.size() + " snappings, using " + track.size() + " coords, min snapped required " + minNumberOfSnappedEdges);
+		}
+		
+		// step 7
+		if (snaps.isEmpty() || snaps.size() < minNumberOfSnappedEdges) { // not enough edges were snapped. give up.
+			return DEFAULT;
 		}
 		
 		// stage 2a (step 8). now, process the edges:
@@ -937,11 +966,7 @@ public class SnapTracksThread extends Thread {
 		
 		// stage 7a (step 30) - drop runway edges now we have the whole taxi route
 		// stage 7b (step 31) is done after this returns
-		for (int i = rval.snappings.size() - 1; i >= 0; i--) {
-			if (rval.snappings.get(i).getSnappedEdge().getEdgeType() == TaxiEdge.EdgeType.RUNWAY) {
-				rval.removeSnappingAtPosition(i);
-			}
-		}
+		removeRunwaysFromRoute(rval);
 		
 		if (localDebug) {
 			debugSnappingsToKML("SnappingStage7a", null, rval.snappings, true, rval.snappings.get(0).getEarliestTimeAtCoord().timeAtCoord, rval.getTimesTaken());
@@ -955,24 +980,30 @@ public class SnapTracksThread extends Thread {
 		return rval;
 	}
 	
+	public static void removeRunwaysFromRoute(RouteTaken rval) {
+		for (int i = rval.snappings.size() - 1; i >= 0; i--) {
+			if (rval.snappings.get(i).getSnappedEdge().getEdgeType() == TaxiEdge.EdgeType.RUNWAY) {
+				rval.removeSnappingAtPosition(i);
+			}
+		}
+	}
+	
 	private List<GraphPath<TaxiNode, TaxiEdge>> getShortestsPathsBetween(TaxiNode tn0, TaxiNode tn1) {
 		// in the cache?
 		Map<TaxiNode, List<GraphPath<TaxiNode, TaxiEdge>>> pathsForTN0 = kShortestPathsCache.get(tn0);
 		if (pathsForTN0 == null) {
-			pathsForTN0 = new HashMap<>();
-			synchronized (kShortestPathsCache) {
-				kShortestPathsCache.put(tn0, pathsForTN0);
-			}
+			pathsForTN0 = new ConcurrentHashMap<>();
+			kShortestPathsCache.put(tn0, pathsForTN0);
 		}
 		
 		List<GraphPath<TaxiNode, TaxiEdge>> paths = pathsForTN0.get(tn1);
 		if (paths == null) {
+			if (SnapTracks.GLOBAL_DEBUG_SNAPPING_CACHE) printlnSafelyToSystemOut("kShortestPaths cache MISS " + tn0 + "--->" + tn1);
 			KShortestPaths<TaxiNode, TaxiEdge> ksp = new KShortestPaths<TaxiNode, TaxiEdge>(graph, tn0, kForStage2PathReduction);
 			paths = ksp.getPaths(tn1);
-			
-			synchronized (kShortestPathsCache) {
-				pathsForTN0.put(tn1, paths);
-			}
+			pathsForTN0.put(tn1, paths);
+		} else {
+			if (SnapTracks.GLOBAL_DEBUG_SNAPPING_CACHE) printlnSafelyToSystemOut("kShortestPaths cache HIT " + tn0 + "--->" + tn1);
 		}
 		
 		return paths;
@@ -982,19 +1013,14 @@ public class SnapTracksThread extends Thread {
 		// in the cache?
 		Map<TaxiNode, DijkstraShortestPath<TaxiNode, TaxiEdge>> pathsForTN0 = shortestPathCache.get(tn0);
 		if (pathsForTN0 == null) {
-			pathsForTN0 = new HashMap<>();
-			synchronized (shortestPathCache) {
-				shortestPathCache.put(tn0, pathsForTN0);
-			}
+			pathsForTN0 = new ConcurrentHashMap<>();
+			shortestPathCache.put(tn0, pathsForTN0);
 		}
 		
 		DijkstraShortestPath<TaxiNode, TaxiEdge> dsp = pathsForTN0.get(tn1);
 		if (dsp == null) {
 			dsp = new DijkstraShortestPath<TaxiNode, TaxiEdge>(graph, tn0, tn1);
-			
-			synchronized (shortestPathCache) {
-				pathsForTN0.put(tn1, dsp);
-			}
+			pathsForTN0.put(tn1, dsp);
 		}
 		
 		return dsp;
@@ -1945,6 +1971,25 @@ public class SnapTracksThread extends Thread {
 			this.snappedFromCoord = false;
 		}
 		
+		private static final Pattern EDGEID_PATTERN = Pattern.compile("-ID(\\d+)-"); // match digits within dashes, prefix ID, e.g. -ID325-
+		
+		/**resurrect a Snapping from a toString string - needs taxigen to get edge objects*/
+		public static Snapping fromToString(String s, TaxiGen tg) {
+			if (!s.startsWith("$") || !s.endsWith("$")) {
+				throw new IllegalArgumentException("Doesn't look like a Snapping.toString() string! --- " + s);
+			}
+			
+			TaxiEdge te = null;
+			Matcher numberMatcher = EDGEID_PATTERN.matcher(s);
+			if (numberMatcher.find()) {
+				String strEdgeID = numberMatcher.group(1);
+				int edgeID = Integer.parseInt(strEdgeID);
+				te = tg.getEdgeByGMWId(edgeID);
+			}
+			
+			return new Snapping(te, -1, false);
+		}
+		
 		/**assumes edge length is already calculated properly!*/
 		private double calcFractionAlongEdge(TaxiEdge edge, LatLng snappedCoord) {
 			double distanceAlongEdge = Geography.distance(edge.getTnFrom().getLatCoordinate(), edge.getTnFrom().getLonCoordinate(), snappedCoord.getLat(), snappedCoord.getLng());
@@ -2234,6 +2279,7 @@ public class SnapTracksThread extends Thread {
 		
 		try {
 			kml.marshal(new File(filename));
+			System.out.println("debugSnappingsToKML():" + filename + " written.");
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
