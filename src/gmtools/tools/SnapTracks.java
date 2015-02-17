@@ -119,6 +119,7 @@ public class SnapTracks {
 	 *    -steps=50 : number of steps out (default=50)
 	 *    -d=10 : distance from an edge in metres for a coordinate to snap to it (default=10)
 	 *    -b=1800 : if there is a gap of more than this in metres between points, split into two separate tracks (<0 to disable) (default=1800)
+	 *    -etd=XXX_EdgeTimeDetails : attempt to pick up the snapped routes from the specified EDT file and write out the normal outputs
 	 *    -min=n : minimum number of points in a track (after cleaning) near airport before we'll try snapping (default=10)
 	 *    -clean_XXX=YYY : any parameters that need passed to cleaning algorithm
 	 */
@@ -237,9 +238,9 @@ public class SnapTracks {
 		System.out.println("  Airport ID, lat and lon:" + airportID + ", " + latAirport + ", " + lonAirport);
 		System.out.println("  Flights to process:" + ((endFlight < startFlight)? "all" : startFlight + " to " + endFlight));
 		System.out.println("  Threads:" + numberOfThreads);
-		System.out.println("  Displacement step size, count:" + stepWidthMetres + ", " + maxStepsOut);
+		System.out.println("  Displacement step size (m), count:" + stepWidthMetres + ", " + maxStepsOut);
 		System.out.println("  Min points near airport required to try snapping:" + min);
-		System.out.println("  Max distance for coord to snap to edge:" + snapDistanceM);
+		System.out.println("  Max distance for coord to snap to edge (m):" + snapDistanceM);
 		System.out.println("  Flight track files:" + ArrayTools.toString(flightTracksFiles, ","));
 		System.out.println();
 		
@@ -318,6 +319,7 @@ public class SnapTracks {
 		System.out.println("   -step=10 : step width in metres (default=10)");
 		System.out.println("   -steps=50 : number of steps out (default=50)");
 		System.out.println("   -d=10 : distance from an edge in metres for a coordinate to snap to it (default=10)");
+		System.out.println("   -etd=XXX_EdgeTimeDetails : attempt to pick up the snapped routes from the specified EDT file and write out the normal outputs");
 		System.out.println("   -b=1800 : if there is a gap of more than this in metres between points, split into two separate tracks (<0 to disable) (default=1800)");
 		System.out.println("   -min=n : minimum number of points in a track (after cleaning) near airport before we'll try snapping (default=10)");
 		System.out.println("   -clean_XXX=YYY : any parameters that need passed to cleaning algorithm");
@@ -681,8 +683,6 @@ public class SnapTracks {
 				
 				// taken from calcTimesToTravelEdges()
 				// add last edge's times
-//				Long secondLastOutTime = rval.get(rval.size() - 1).getOutTime();
-//				rval.add(new EdgeTime(Double.NaN, secondLastOutTime, null)); // we can't calc last time because we have no points beyond edge end
 				snappings.add(Snapping.fromToString(lines.get(lines.size()-1)[columnIndices.getColumnIndex(EDGETIMESDETAILS_OUT_HEADER_NEXTSNAPPING, true)], this.taxiGen));
 				edgeTimes.add(new EdgeTime(Double.NaN, null, null));
 				
@@ -700,12 +700,6 @@ public class SnapTracks {
 					}
 				}
 				
-//				System.out.println("=======================");
-//				for (Snapping s : snappings) {
-//					System.out.println(s);
-//				}
-//				System.out.println("=======================");
-				
 				// now calc directions and create route object
 				List<Snapping> snappingsBetweenNodes = new ArrayList<Snapping>(); // this is different to route; it will have duplicates and nulls as it represents the actual edges travelled over in the order they were travelled. However, any edges here will be in routeEdges, in the same order
 				List<Boolean> snappingsBetweenNodesDirection = new ArrayList<Boolean>();
@@ -713,21 +707,11 @@ public class SnapTracks {
 				RouteTaken routeTaken = new RouteTaken(snappingsBetweenNodes, snappingsBetweenNodesDirection);		
 				routeTaken.setTimesTaken(edgeTimes);
 				
-//				System.out.println("+++++++++++++++++++++++");
-//				for (Snapping s : snappingsBetweenNodes) {
-//					System.out.println(s);
-//				}
-//				System.out.println("+++++++++++++++++++++++");
-		
 				// removeRunwaysFromRoute(RouteTaken), called after time calcs in snapRouteToGraph()
 				SnapTracksThread.removeRunwaysFromRoute(routeTaken);
 				
 				// split routes method in STT class is called after snapRouteToGraph() returns
 				List<RouteTaken> splitRoutes = stt.splitRoute(routeTaken);
-				
-//				if (splitRoutes.size() > 1) {
-//					System.out.println("SPLIT " + splitRoutes.size());
-//				}
 				
 				aircraftRoutes[aircraftNum] = splitRoutes;
 			} else {
