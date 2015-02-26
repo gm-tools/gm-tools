@@ -27,7 +27,7 @@ import de.micromata.opengis.kml.v_2_2_0.LineString;
 import de.micromata.opengis.kml.v_2_2_0.Style;
 
 /**
- * copyright (c) 2014 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
+ * copyright (c) 2014-2015 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
  * Released under the MIT Licence http://opensource.org/licenses/MIT
  * Instructions, citation information, licencing and source
  * are available at https://github.com/gm-tools/gm-tools/

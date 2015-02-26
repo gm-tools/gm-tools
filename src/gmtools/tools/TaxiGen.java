@@ -4,6 +4,7 @@ import gmtools.common.Geography;
 import gmtools.common.GroundMovementWriter;
 import gmtools.common.KMLUtils;
 import gmtools.common.Legal;
+import gmtools.common.Maths;
 import gmtools.graph.GraphManipulation;
 import gmtools.graph.Runway;
 import gmtools.graph.Stands;
@@ -48,7 +49,7 @@ import de.micromata.opengis.kml.v_2_2_0.Placemark;
 import de.micromata.opengis.kml.v_2_2_0.Style;
 
 /**
- * copyright (c) 2014 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
+ * copyright (c) 2014-2015 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
  * Released under the MIT Licence http://opensource.org/licenses/MIT
  * Instructions, citation information, licencing and source
  * are available at https://github.com/gm-tools/gm-tools/
@@ -815,7 +816,7 @@ public class TaxiGen {
 			boolean endOfStandWay = false; // if this node is at the end of a "stand" way (so this node is the stand itself)
 			
 			String runwayNames = "";
-			String standName = "";
+			//String standName = "";
 			List<AeroWay> a = m.get(key);
 			for (int i = 0; i < a.size(); i++) {
 				AeroWay w = a.get(i);
@@ -825,20 +826,25 @@ public class TaxiGen {
 					runwayNames += ((numRunways==0)?"":",")+w.name;
 					numRunways++;
 				} else if ((w.type == Type.STAND) || (specifiedStandNames.contains(w.name))) {
-					standName = w.name;
+					//standName = w.name;
 					numStands++;
 					
+					/* used to figure out if this was a "stand" node here
+					 * now done after we've loaded all the nodes for this way
 					if (key == w.way.getWayNodes().get(w.way.getWayNodes().size() - 1).getNodeId()) { // that is, if this node is found at the end of the stand way
 						endOfStandWay = true;
 					}
+					 */
 				}
 			}
 			
 			TaxiNode.NodeType type = null; // stand type is allocated elsewhere as we don't get that from OSM ()
 			if ((numRunways > 0) && (numTaxiways > 0)) {
 				type = NodeType.RUNWAY_CROSSING;
+			/* see note re stands a few lines up from here
 			} else if (endOfStandWay && (numStands > 0) && (numTaxiways == 0)) { // stand node is only the one at the end (not on the taxiway)
 				type = NodeType.STAND;
+			*/
 			} else if (((numRunways == 0) && (numTaxiways == 1)) || (!endOfStandWay && (numStands > 0) && (numTaxiways == 0))) { // intermediate is either on a midpoint of a taxiway, or on a midpoint of a stand
 				type = NodeType.INTERMEDIATE;
 			} else if ((numRunways == 0) && (numTaxiways > 1)) {
@@ -851,6 +857,9 @@ public class TaxiGen {
 				Node n = posm.getNode(key);
 				// -1 * y coord, because lat is up as values increase, whereas screen is down as values increase
 				TaxiNode tn = new TaxiNode("N" + n.getId(), type, n.getLatitude(), n.getLongitude());
+				tn.setNumRunways(numRunways);
+				tn.setNumStands(numStands);
+				tn.setNumTaxiways(numTaxiways);
 				nodeStore.put(tn.getId(), tn);
 
 				// add names of runways associated with this node
@@ -860,9 +869,12 @@ public class TaxiGen {
 					tn.setMeta(rw);
 				}
 				
+				// this is now redundant as we determine which nodes are stands later
+				/*
 				if (type == NodeType.STAND) {
 					tn.setMeta(standName);
 				}
+				*/
 			}
 		}
 				
@@ -872,13 +884,39 @@ public class TaxiGen {
 				boolean stand = (w.type == Type.STAND) || specifiedStandNames.contains(w.name);
 				Taxiway tw = null;
 				
-				if (!stand) {
+				if (!stand) { // not a stand, need to get the name from Way metadata
 					tw = taxiways.get(w.name);
 
 					if (tw == null) {
 						tw = new Taxiway(w.name, w.type==Type.TAXIWAY ? Taxiway.Type.TAXIWAY : Taxiway.Type.RUNWAY);
 						taxiways.put(w.name, tw);
 					}
+				} else { // is a stand: need to figure out where the end is
+					// figure out which node is the "end" of the stand, that is, where the nosewheel sits
+					// this will either be a node with nothing else attached (ie at the start or end of a single Way)
+					// or it will be the last node of the stand Way (for stands with a drivethrough taxiway)
+					// used to try figuring out this above when loading the nodes, but really need to load all of them first
+					// to know which Ways they're associated with
+					
+					// OSM actually say that the last node in the stand's Way should be the stand itself
+					// but particularly when the stands are taxiways, it seems to often be the wrong way round
+					
+					// are either of the end nodes only associate with 1 Way - that is, only one stand and no taxiways? (try the end one first)
+					TaxiNode startNode = nodeStore.get("N" + w.way.getWayNodes().get(0).getNodeId());
+					TaxiNode endNode = nodeStore.get("N" + w.way.getWayNodes().get(w.way.getWayNodes().size() - 1).getNodeId());
+					
+					TaxiNode standNode;
+					if ((startNode.getNumTaxiways() == 0) && (startNode.getNumStands() == 1)) {
+						standNode = startNode;
+					} else if ((endNode.getNumTaxiways() == 0) && (endNode.getNumStands() == 1)) {
+						standNode = endNode;
+					} else { // otherwise, always use the last node in the Way for the stand (which is what OSM says should be the stand location) 
+						standNode = endNode;
+					}
+					
+					// update node's type and name
+					standNode.setNodeType(NodeType.STAND);
+					standNode.setMeta(w.name);
 				}
 				
 				// get nodelist for this Way, and add an edge for each pair of nodes
@@ -1014,13 +1052,16 @@ public class TaxiGen {
     	return new double[] {llRval.getLat(), llRval.getLng()};
     }
 	
-    private static void graphNodesAndEdgesToKML(String filename, Collection<TaxiNode> nodes, Collection<TaxiEdge> edges) {
+    private void graphNodesAndEdgesToKML(String filename, Collection<TaxiNode> nodes, Collection<TaxiEdge> edges) {
 		final Kml kml = KmlFactory.createKml();
 		final Document document = kml.createAndSetDocument().withName(filename).withOpen(true);
 		final Document documentTaxiways = document.createAndAddDocument().withName(filename + "Taxiways").withOpen(true);
 		final Document documentNodes = document.createAndAddDocument().withName(filename + "Nodes").withOpen(true);
-		final Style styleOSM = documentNodes.createAndAddStyle().withId("placemarkStyleGates");
-		styleOSM.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor("ffff7777").withScale(1);
+
+		final Style styleOSM = documentNodes.createAndAddStyle().withId("placemarkStyle");
+		styleOSM.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor("ff00ffff").withScale(1);
+		final Style styleOSMGates = documentNodes.createAndAddStyle().withId("placemarkStyleGates");
+		styleOSMGates.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor("ffff0000").withScale(1);
 		
 		final Style styleTaxiway = documentTaxiways.createAndAddStyle().withId("linestyleTaxiway");
 		styleTaxiway.createAndSetLineStyle()
@@ -1047,7 +1088,9 @@ public class TaxiGen {
 				style += "Runway";
 			}
 			
-			LineString ls = documentTaxiways.createAndAddPlacemark().withName(te.getUniqueString() + "["+te.getTnFrom().getId()+">>>"+te.getTnTo().getId()+"]" + Geography.bearing(te)).withStyleUrl(style)
+			// name for edges is "GMID type [node1id>>>node2id] bearing"
+			String name = this.gmwIDsForTaxiEdges.get(te) + " " + te.getEdgeType() + " ["+te.getTnFrom().getId()+">>>"+te.getTnTo().getId()+"] " + Maths.roundDouble(Geography.bearing(te), 2) + "deg";
+			LineString ls = documentTaxiways.createAndAddPlacemark().withName(name).withStyleUrl(style)
 			.createAndSetLineString(); //.withExtrude(true); //.withTessellate(true);
 
 			ls.addToCoordinates(te.getTnFrom().getLonCoordinate() + "," + te.getTnFrom().getLatCoordinate() + ",0");
@@ -1055,8 +1098,10 @@ public class TaxiGen {
 		}
 		
 		for (TaxiNode tn : nodes) {
+			String style = tn.getNodeType() == NodeType.STAND ? "#placemarkStyleGates" : "#placemarkStyle";
 			String meta = (tn.getMeta() != null) && (!tn.getMeta().isEmpty()) ? " (" + tn.getMeta() + ")" : "";
-			Placemark p = documentNodes.createAndAddPlacemark().withName(tn.getId() + meta).withStyleUrl("#placemarkStyleGates");
+			String name = this.gmwIDsForTaxiNodes.get(tn).toString() + " " + tn.getNodeType() + (tn.getNodeType()==NodeType.INTERMEDIATE?"":" (" + tn.getId() + ")") + meta; // name for nodes is "GMID type OSMID (Meta)" - if type is intermediate there's no OSM ID
+			Placemark p = documentNodes.createAndAddPlacemark().withName(name).withStyleUrl(style);
 			p.createAndSetPoint().addToCoordinates(tn.getLonCoordinate(), tn.getLatCoordinate());
 		}
 		
@@ -1078,9 +1123,11 @@ public class TaxiGen {
 		for (int i = 0; i < documentNodeGroups.length; i++) {
 			documentNodeGroups[i] = documentNodes.createAndAddDocument().withName("Group " + i).withOpen(false);
 		}
-		
-		final Style styleOSM = documentNodes.createAndAddStyle().withId("placemarkStyleGates");
-		styleOSM.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor("ffff7777").withScale(1);
+
+		final Style styleOSM = documentNodes.createAndAddStyle().withId("placemarkStyle");
+		styleOSM.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor("ff00ffff").withScale(1);
+		final Style styleOSMGates = documentNodes.createAndAddStyle().withId("placemarkStyleGates");
+		styleOSMGates.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor("ffff0000").withScale(1);
 		
 		final Style styleTaxiway = documentTaxiways.createAndAddStyle().withId("linestyleTaxiway");
 		styleTaxiway.createAndSetLineStyle()
@@ -1116,8 +1163,9 @@ public class TaxiGen {
 		
 		for (int i = 0; i < documentNodeGroups.length; i++) {
 			for (TaxiNode tn : nodes.get(i)) {
+				String style = tn.getNodeType() == NodeType.STAND ? "#placemarkStyleGates" : "#placemarkStyle";
 				String meta = (tn.getMeta() != null) && (!tn.getMeta().isEmpty()) ? " (" + tn.getMeta() + ")" : "";
-				Placemark p = documentNodeGroups[i].createAndAddPlacemark().withName(tn.getId() + meta).withStyleUrl("#placemarkStyleGates");
+				Placemark p = documentNodeGroups[i].createAndAddPlacemark().withName(tn.getId() + meta).withStyleUrl(style);
 				p.createAndSetPoint().addToCoordinates(tn.getLonCoordinate(), tn.getLatCoordinate());
 			}
 		}

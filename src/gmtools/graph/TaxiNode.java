@@ -3,7 +3,7 @@ package gmtools.graph;
 import gmtools.common.GroundMovementWriter;
 
 /**
- * copyright (c) 2014 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
+ * copyright (c) 2014-2015 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
  * Released under the MIT Licence http://opensource.org/licenses/MIT
  * Instructions, citation information, licencing and source
  * are available at https://github.com/gm-tools/gm-tools/
@@ -31,6 +31,11 @@ public class TaxiNode implements Comparable<TaxiNode> {
 	/**this also only applies to stand/gate nodes - specifies a specific node to attach to*/
 	private String nodeAttachment;
 	
+	// these are just internal counters for parsing OSM
+	private int numRunways = 0;
+	private int numTaxiways = 0;
+	private int numStands = 0;
+	
 	public TaxiNode(String id, NodeType nodeType, double latCoordinate, double lonCoordinate) {
 		this.id = id;
 		this.nodeType = nodeType;
@@ -39,6 +44,10 @@ public class TaxiNode implements Comparable<TaxiNode> {
 		this.associatedTaxiways = new String[0];
 		this.meta = "";
 		this.nodeAttachment = null;
+		
+		this.numRunways = 0;
+		this.numTaxiways = 0;
+		this.numStands = 0;
 	}
 	
 	public TaxiNode(String id, NodeType nodeType) {
@@ -99,6 +108,30 @@ public class TaxiNode implements Comparable<TaxiNode> {
 	
 	public String getMeta() {
 		return meta;
+	}
+	
+	public int getNumRunways() {
+		return numRunways;
+	}
+
+	public void setNumRunways(int numRunways) {
+		this.numRunways = numRunways;
+	}
+
+	public int getNumTaxiways() {
+		return numTaxiways;
+	}
+
+	public void setNumTaxiways(int numTaxiways) {
+		this.numTaxiways = numTaxiways;
+	}
+
+	public int getNumStands() {
+		return numStands;
+	}
+
+	public void setNumStands(int numStands) {
+		this.numStands = numStands;
 	}
 
 	@Override

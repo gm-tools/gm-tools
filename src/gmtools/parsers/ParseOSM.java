@@ -25,7 +25,7 @@ import org.openstreetmap.osmosis.xml.common.CompressionMethod;
 import org.openstreetmap.osmosis.xml.v0_6.XmlReader;
 
 /**
- * copyright (c) 2014 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
+ * copyright (c) 2014-2015 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
  * Released under the MIT Licence http://opensource.org/licenses/MIT
  * Instructions, citation information, licencing and source
  * are available at https://github.com/gm-tools/gm-tools/
@@ -94,7 +94,7 @@ public class ParseOSM {
 						}
 					}
 					
-					if ((isTaxiway || isRunway || isParkingPosition) && !disused) {
+					if ((isTaxiway || isRunway || isParkingPosition) && !disused) { // only interested in these nodes
 						// now get all the nodes for this way and associate it with them
 						AeroWay aw = new AeroWay((Way)entity, (isTaxiway ? AeroWay.Type.TAXIWAY : (isRunway ? AeroWay.Type.RUNWAY : (isParkingPosition ? AeroWay.Type.STAND : AeroWay.Type.OTHER))), name);
 						ways.add(aw);
@@ -187,6 +187,16 @@ public class ParseOSM {
 		@Override
 		public int compareTo(AeroWay arg0) {
 			return this.way.compareTo(arg0.way);
+		}
+		
+		@Override
+		public boolean equals(Object obj) {
+			return this.compareTo((AeroWay)obj) == 0;
+		}
+		
+		@Override
+		public int hashCode() {
+			return this.way.hashCode();
 		}
 	}
 }
