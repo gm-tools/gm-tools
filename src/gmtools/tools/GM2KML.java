@@ -334,7 +334,7 @@ public class GM2KML {
 	// set flights to null to skip them
     @SuppressWarnings("unchecked")
 	private static void graphNodesAndEdgesToKML(String filename, PrintStream outDetail, Collection<TaxiNode> nodes, Collection<TaxiEdge> edges, Object flightpaths, Map<String,Map<TaxiEdge,List<Double>>> speeds, Mode mode) {
-    	String filePrefix = filename.substring(0, filename.lastIndexOf('.'));
+    	String filePrefix = filename.contains(".") ? filename.substring(0, filename.lastIndexOf('.')) : filename;
     	
     	boolean addingFlightTracks = false; // tracks all in one group
     	boolean addingFlightTracksToStands = false; // tracks in groups associated with stands
