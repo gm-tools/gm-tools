@@ -52,6 +52,15 @@ public class GM2KML {
 	}
 	
 	private static final String DETAIL_SEPARATOR = "\t";
+
+	private static final String BASECOLOUR_FOR_PATHS = "baseColourForPaths";
+	private static final String BASECOLOUR_FOR_STANDS = "baseColourForStands";
+	private static final String BASECOLOUR_FOR_TAXIWAYS_THIN = "baseColourForTaxiwaysThin";
+	private static final String BASECOLOUR_FOR_TAXIWAYS = "baseColourForTaxiways";
+	private static final String BASECOLOUR_FOR_RUNWAYS = "baseColourForRunways";
+	private static final String BASECOLOUR_FOR_NODES = "baseColourForNodes";
+	private static final String BASECOLOUR_FOR_STANDNODES = "baseColourForStandNodes";
+	private static final String BACKGROUND_COLOUR = "backgroundColour";
 	
 	// usage: GM2KML inputGMFile [args]
 	// args:
@@ -63,6 +72,14 @@ public class GM2KML {
 	// -bweekend=y/n : separate time bins will be created for weekends and weekdays (default=n)
 	// -binterval=480 : generate time bins of the specified length in minutes (example here will make bins for 0000-0800,0800-1600,1600-0000) (default=180 / 3hours)
 	// -iso=n : for speed related modes, ignore speeds over the specified value in m/s (used to erroneous values caused by noise in the data) (default is no limit, but 40m/s is suggested)
+	// -cp=oobbggrr : colour used for aircraft paths (hex values for opacity, blue, green and red) default is 2255ee00
+	// -cs=oobbggrr : colour used for stand edges (hex values for opacity, blue, green and red) default is 2255ee00
+	// -ct=oobbggrr : colour used for taxiway edges (hex values for opacity, blue, green and red) default is 2255ee00
+	// -ctt=oobbggrr : colour used for thin taxiway edges (hex values for opacity, blue, green and red) default is ffffffff
+	// -cr=oobbggrr : colour used for runway edges (hex values for opacity, blue, green and red) default is 2255ee00
+	// -cn=oobbggrr : colour used for nodes (hex values for opacity, blue, green and red) default is 2255ee00
+	// -csn=oobbggrr : colour used for stand nodes (hex values for opacity, blue, green and red) default is 2255ee00
+	// -cbg=oobbggrr : colour used for blank background (hex values for opacity, blue, green and red) default is 2255ee00
 	// modes:
 	// STATIC : output taxiways,stands and runways only 
 	// ALL_MOVEMENTS : output all flight tracks
@@ -84,6 +101,14 @@ public class GM2KML {
 		int[] timeBins = null;
 		int timeBinInterval = 3 * 60; // in minutes
 		boolean timeBinsSeparateForWeekends = false;
+		Map<String,String> colours = new HashMap<String,String>();
+		colours.put(BASECOLOUR_FOR_PATHS, "22000000"); // opacity then bgr
+		colours.put(BASECOLOUR_FOR_STANDS, "55ff0000"); // opacity then bgr
+		colours.put(BASECOLOUR_FOR_TAXIWAYS, "550000ff"); // opacity then bgr
+		colours.put(BASECOLOUR_FOR_RUNWAYS, "5500ff00"); // opacity then bgr
+		colours.put(BASECOLOUR_FOR_NODES, "ff00ffff"); // opacity then bgr
+		colours.put(BASECOLOUR_FOR_STANDNODES, "ffff0000"); // opacity then bgr
+		colours.put(BACKGROUND_COLOUR, "ffffffff"); // opacity then bgr
 		
 		Legal.printLicence("GM2KML");
 		if (args.length < 1) {
@@ -123,6 +148,31 @@ public class GM2KML {
 				try {
 					ignoreSpeedsOver = Double.parseDouble(arg.substring(5));
 				} catch (NumberFormatException e) { System.err.println("Trouble parsing iso value " + arg); }
+			} else if (argLC.matches("^-c..?=.+")) {
+				String hex = argLC.substring(argLC.indexOf('=')+1);
+				if ((hex.length() == 8) && (hex.matches("[0-9a-f]+"))) {
+					if (argLC.startsWith("-cp=")) {
+						colours.put(BASECOLOUR_FOR_PATHS, hex);
+					} else if (argLC.startsWith("-cs=")) {
+						colours.put(BASECOLOUR_FOR_STANDS, hex);
+					} else if (argLC.startsWith("-ctt=")) {
+						colours.put(BASECOLOUR_FOR_TAXIWAYS_THIN, hex);
+					} else if (argLC.startsWith("-ct=")) {
+						colours.put(BASECOLOUR_FOR_TAXIWAYS, hex);
+					} else if (argLC.startsWith("-cr=")) {
+						colours.put(BASECOLOUR_FOR_RUNWAYS, hex);
+					} else if (argLC.startsWith("-cn=")) {
+						colours.put(BASECOLOUR_FOR_NODES, hex);
+					} else if (argLC.startsWith("-csn=")) {
+						colours.put(BASECOLOUR_FOR_STANDNODES, hex);
+					} else if (argLC.startsWith("-cbg=")) {
+						colours.put(BACKGROUND_COLOUR, hex);
+					} else {
+						System.err.println("Unknown colour option in " + arg);
+					}
+				} else {
+					System.err.println("Trouble parsing colour in " + arg);
+				}
 			}
 		}
 		
@@ -189,7 +239,7 @@ public class GM2KML {
 			speeds = readAndCalcEdgeSpeeds(at, inEdgeTimes, (mode == Mode.AVERAGE_SPEED_PER_EDGE_BINNED), ignoreSpeedsOver, timeBinManager);
 		}
 		System.out.println("Loaded. Writing to " + outKML + "...");
-		graphNodesAndEdgesToKML(outKML, outDetailPS, at.getAllNodes().values(), at.getAllEdges(), acs, speeds, mode);
+		graphNodesAndEdgesToKML(outKML, outDetailPS, at.getAllNodes().values(), at.getAllEdges(), acs, speeds, mode, colours);
 		System.out.println("All done.");
 		
 		if (outDetailPS != null) {
@@ -202,24 +252,32 @@ public class GM2KML {
 		System.out.println("Usage: GM2KML inputGMFile [options]");
 		System.out.println();
 		System.out.println("Options:");
-		System.out.println("-o=filename : kml output filename (default=gm2kmlOutput.kml)");
-		System.out.println("-m=mode : one of STATIC,ALL_MOVEMENTS,ALL_MOVEMENTS_BINNED,STAND_PATHS,STAND_PATHS_BINNED,VISITS_PER_STAND,MOVEMENTS_PER_EDGE,AVERAGE_SPEED_PER_EDGE,AVERAGE_SPEED_PER_EDGE_BINNED");
-		System.out.println("-d=filename : specifies filename to write details of the processed movements to");
-		System.out.println("-t=filename : specifies filename to read edge times from (required for speed related modes)");
-		System.out.println("-bins=30,120,180 : overrides binterval; specifies time bins for the \"binned\" modes. Comma-separated, number of minutes from midnight for the start of each bin (one is automatically added from midnight to the first specified one). Example defines bins for 0000-0030,0030-0200,0200-0230 and 0230-0000 ");
-		System.out.println("-bweekend=y/n : separate time bins will be created for weekends and weekdays (default=n)");
-		System.out.println("-binterval=480 : generate time bins of the specified length in minutes (example here will make bins for 0000-0800,0800-1600,1600-0000) (default=180 / 3hours)");
-		System.out.println("-iso=n : for speed related modes, ignore speeds over the specified value in m/s (used to erroneous values caused by noise in the data) (default is no limit, but 40m/s is suggested)");
+		System.out.println(" -o=filename : kml output filename (default=gm2kmlOutput.kml)");
+		System.out.println(" -m=mode : one of STATIC,ALL_MOVEMENTS,ALL_MOVEMENTS_BINNED,STAND_PATHS,STAND_PATHS_BINNED,VISITS_PER_STAND,MOVEMENTS_PER_EDGE,AVERAGE_SPEED_PER_EDGE,AVERAGE_SPEED_PER_EDGE_BINNED");
+		System.out.println(" -d=filename : specifies filename to write details of the processed movements to");
+		System.out.println(" -t=filename : specifies filename to read edge times from (required for speed related modes)");
+		System.out.println(" -bins=30,120,180 : overrides binterval; specifies time bins for the \"binned\" modes. Comma-separated, number of minutes from midnight for the start of each bin (one is automatically added from midnight to the first specified one). Example defines bins for 0000-0030,0030-0200,0200-0230 and 0230-0000 ");
+		System.out.println(" -bweekend=y/n : separate time bins will be created for weekends and weekdays (default=n)");
+		System.out.println(" -binterval=480 : generate time bins of the specified length in minutes (example here will make bins for 0000-0800,0800-1600,1600-0000) (default=180 / 3hours)");
+		System.out.println(" -iso=n : for speed related modes, ignore speeds over the specified value in m/s (used to erroneous values caused by noise in the data) (default is no limit, but 40m/s is suggested)");
+		System.out.println(" -cp=oobbggrr : colour used for aircraft paths (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -cs=oobbggrr : colour used for stand edges (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -ct=oobbggrr : colour used for taxiway edges (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -ctt=oobbggrr : colour used for thin taxiway edges (hex values for opacity, blue, green and red) default is ffffffff");
+		System.out.println(" -cr=oobbggrr : colour used for runway edges (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -cn=oobbggrr : colour used for nodes (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -csn=oobbggrr : colour used for stand nodes (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -cbg=oobbggrr : colour used for blank background (hex values for opacity, blue, green and red) default is 2255ee00");
 		System.out.println();
 		System.out.println("Modes:");
-		System.out.println("STATIC : output taxiways,stands and runways only ");
-		System.out.println("ALL_MOVEMENTS : output all flight tracks");
-		System.out.println("ALL_MOVEMENTS_BINNED : output all flight tracks, in bins as specified");
-		System.out.println("STAND_PATHS : output paths used by aircraft to reach stands");
-		System.out.println("STAND_PATHS_BINNED : output paths used by aircraft to reach stands in bins as specified");
-		System.out.println("VISITS_PER_STAND : show number of movements at each stand with various sizes of icon");
-		System.out.println("AVERAGE_SPEED_PER_EDGE : use colour to show the average taxi speed on edges (red=slow, white=fast, scaled to range of speeds in data)");
-		System.out.println("AVERAGE_SPEED_PER_EDGE_BINNED : ");
+		System.out.println(" STATIC : output taxiways,stands and runways only ");
+		System.out.println(" ALL_MOVEMENTS : output all flight tracks");
+		System.out.println(" ALL_MOVEMENTS_BINNED : output all flight tracks, in bins as specified");
+		System.out.println(" STAND_PATHS : output paths used by aircraft to reach stands");
+		System.out.println(" STAND_PATHS_BINNED : output paths used by aircraft to reach stands in bins as specified");
+		System.out.println(" VISITS_PER_STAND : show number of movements at each stand with various sizes of icon");
+		System.out.println(" AVERAGE_SPEED_PER_EDGE : use colour to show the average taxi speed on edges (red=slow, white=fast, scaled to range of speeds in data)");
+		System.out.println(" AVERAGE_SPEED_PER_EDGE_BINNED : ");
 		System.out.println();
 	}
 	
@@ -333,7 +391,7 @@ public class GM2KML {
 
 	// set flights to null to skip them
     @SuppressWarnings("unchecked")
-	private static void graphNodesAndEdgesToKML(String filename, PrintStream outDetail, Collection<TaxiNode> nodes, Collection<TaxiEdge> edges, Object flightpaths, Map<String,Map<TaxiEdge,List<Double>>> speeds, Mode mode) {
+	private static void graphNodesAndEdgesToKML(String filename, PrintStream outDetail, Collection<TaxiNode> nodes, Collection<TaxiEdge> edges, Object flightpaths, Map<String,Map<TaxiEdge,List<Double>>> speeds, Mode mode, Map<String, String> colours) {
     	String filePrefix = filename.contains(".") ? filename.substring(0, filename.lastIndexOf('.')) : filename;
     	
     	boolean addingFlightTracks = false; // tracks all in one group
@@ -392,33 +450,33 @@ public class GM2KML {
 		final Document documentTaxiwaysE = document.createAndAddDocument().withName(filePrefix + "TaxiwaysEdges").withOpen(!addingFlightTracksToStands).withVisibility(!addingFlightTracksToStands); // make edges invisible and collapsed if looking at flight tracks 
 		final Document documentTaxiwaysN = document.createAndAddDocument().withName(filePrefix + "TaxiwaysNodes").withOpen(true);
 		final Style styleOSM = documentTaxiwaysN.createAndAddStyle().withId("placemarkStyleGates");
-		styleOSM.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor("ffff7777").withScale(1);
+		styleOSM.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor(colours.get(BASECOLOUR_FOR_NODES)).withScale(1);
 
 		// normally taxiways are red and weight=4, but if they have varying speed then we'll make them thin and colourless
 		final Style styleTaxiway = documentTaxiwaysE.createAndAddStyle().withId("linestyleTaxiway");
 		if (taxiwaysThin) {
 			styleTaxiway.createAndSetLineStyle()
-			.withColor("ffffffff")
+			.withColor(colours.get(BASECOLOUR_FOR_TAXIWAYS_THIN))
 			.withWidth(1.0);
 		} else {
 			styleTaxiway.createAndSetLineStyle()
-			.withColor("550000ff")
+			.withColor(colours.get(BASECOLOUR_FOR_TAXIWAYS))
 			.withWidth(4.0);
 		}
 
 		final Style styleTaxiwayToGate = documentTaxiwaysE.createAndAddStyle().withId("linestyleTaxiwayToGate");
 		styleTaxiwayToGate.createAndSetLineStyle()
-		.withColor("55ff0000")
+		.withColor(colours.get(BASECOLOUR_FOR_STANDS))
 		.withWidth(4.0);
 		
 		final Style styleRunway = documentTaxiwaysE.createAndAddStyle().withId("linestyleRunway");
 		styleRunway.createAndSetLineStyle()
-		.withColor("5500ff00")
+		.withColor(colours.get(BASECOLOUR_FOR_RUNWAYS))
 		.withWidth(4.0);
 
 		final Style styleOriginalFP = document.createAndAddStyle().withId("linestyleFlightpath");
 		styleOriginalFP.createAndSetLineStyle()
-		.withColor("2255ee00")
+		.withColor(colours.get(BASECOLOUR_FOR_PATHS))
 		.withWidth(4.0);
 		
 		// set up styles for varying stand sizes
@@ -427,7 +485,7 @@ public class GM2KML {
 		if (mode == Mode.VISITS_PER_STAND) {
 			for (int i = 0; i < numberOfStandSizes; i++) {
 				final Style styleOSMSized = documentTaxiwaysN.createAndAddStyle().withId("placemarkStyleGates-"+i);
-				styleOSMSized.createAndSetIconStyle().withIcon(new Icon().withHref("http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png")).withColor("ffff7777").withScale((i+1)/2.0);
+				styleOSMSized.createAndSetIconStyle().withIcon(new Icon().withHref("http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png")).withColor(colours.get(BASECOLOUR_FOR_STANDNODES)).withScale((i+1)/2.0);
 			}
 			if (flightpaths != null) {
 				for (List<Movement> l : ((Map<String, List<Movement>>)flightpaths).values()) {
@@ -644,7 +702,7 @@ public class GM2KML {
 			}
 		}
 		
-		KMLUtils.addGroundOverlayToKMLDocument(filename, document);
+		KMLUtils.addGroundOverlayToKMLDocument(filename, document, colours.get(BACKGROUND_COLOUR));
 		
 		try {
 			kml.marshal(new File(filename));

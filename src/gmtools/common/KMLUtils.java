@@ -19,12 +19,18 @@ import de.micromata.opengis.kml.v_2_2_0.Placemark;
 import de.micromata.opengis.kml.v_2_2_0.Point;
 
 public class KMLUtils {
+	public static void addGroundOverlayToKMLDocument(String filenameForKMLDocument, Document document) {
+		addGroundOverlayToKMLDocument(filenameForKMLDocument, document, "ffffffff");
+	}
+	
 	/**
 	 * write a ground overlay image and add to KML - this will allow a blank background to be set
 	 * call this after adding everything so we can set the bounds properly
+	 * 
+	 * colour is oobbggrr - opacity blue green red
 	 */
-	public static void addGroundOverlayToKMLDocument(String filenameForKMLDocument, Document document) {
-		try {
+	public static void addGroundOverlayToKMLDocument(String filenameForKMLDocument, Document document, String colour) {
+		//try {
 			// figure out bounds
 			double[] bounds = getBoundsOfDocument(document, null);
 			// add a little border to them (0.002 deg ought to do)
@@ -34,6 +40,7 @@ public class KMLUtils {
 			bounds[2] -= border;
 			bounds[3] += border;
 			
+			/* no longer need to write image!
 			// figure out parent dir to write file to
 			File parent = new File(filenameForKMLDocument).getParentFile();
 			if (parent == null) {
@@ -46,12 +53,14 @@ public class KMLUtils {
 			ig2.fillRect(0, 0, 100, 100);
 			File blankFile = new File(parent, "blank.png");
 			ImageIO.write(bi, "PNG", blankFile);
+			*/
 			
 			GroundOverlay overlay = document.createAndAddGroundOverlay();
-			overlay.createAndSetIcon().setHref(blankFile.getName());
+			//overlay.createAndSetIcon().setHref(blankFile.getName());
 			overlay.withName("Blank background");
+			overlay.withColor(colour);
 			overlay.createAndSetLatLonBox().withSouth(bounds[0]).withNorth(bounds[1]).withWest(bounds[2]).withEast(bounds[3]);
-		} catch (IOException e) {} // do nothing if we can't write a blank file!
+		//} catch (IOException e) {} // do nothing if we can't write a blank file!
 	}
 	
 	/**

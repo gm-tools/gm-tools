@@ -58,6 +58,14 @@ import de.micromata.opengis.kml.v_2_2_0.Style;
  * This class will take OSM data and specified gate locations and generate a graph representation that is about right
  */
 public class TaxiGen {
+	private static final String BASECOLOUR_FOR_PATHS = "baseColourForPaths";
+	private static final String BASECOLOUR_FOR_STANDS = "baseColourForStands";
+	private static final String BASECOLOUR_FOR_TAXIWAYS = "baseColourForTaxiways";
+	private static final String BASECOLOUR_FOR_RUNWAYS = "baseColourForRunways";
+	private static final String BASECOLOUR_FOR_NODES = "baseColourForNodes";
+	private static final String BASECOLOUR_FOR_STANDNODES = "baseColourForStandNodes";
+	private static final String BACKGROUND_COLOUR = "backgroundColour";
+	
 	/**how far from an existing node on an edge should we be before making a new one?*/
 	private double thresholdForSnapToNode;
 	
@@ -106,6 +114,13 @@ public class TaxiGen {
 	 * -spacing==n : number of metres between intermediate nodes on long taxiway edges (default=50); make negative to disable 
 	 * -minDistance=n : when adding a node to a taxiway for a stand to attach to, if a node exists within this distance, attach to that instead (default=1)
 	 * -rw=y/n : include runways in outputs? y/n (default = y)
+	 * -cp=oobbggrr : colour used for aircraft paths (hex values for opacity, blue, green and red) default is 2255ee00
+	 * -cs=oobbggrr : colour used for stand edges (hex values for opacity, blue, green and red) default is 2255ee00
+	 * -ct=oobbggrr : colour used for taxiway edges (hex values for opacity, blue, green and red) default is 2255ee00
+	 * -cr=oobbggrr : colour used for runway edges (hex values for opacity, blue, green and red) default is 2255ee00
+	 * -cn=oobbggrr : colour used for nodes (hex values for opacity, blue, green and red) default is 2255ee00
+	 * -csn=oobbggrr : colour used for stand nodes (hex values for opacity, blue, green and red) default is 2255ee00
+	 * -cbg=oobbggrr : colour used for blank background (hex values for opacity, blue, green and red) default is 2255ee00
 	 */
 	public static void main(String[] args) {
 		//args = "export/MAN_OSMStands-with23LStartAsTaxiways.osm export/MAN_OSM_GM.txt -stands=export/MANStands_osm.txt -kml=export/MAN_OSM.kml -angles=export/MAN_OSM_Angles.txt".split("\\s+");
@@ -126,6 +141,14 @@ public class TaxiGen {
 		double thresholdForSnapToNode = 1;
 		double spacingForIntermediates = 50;
 		boolean checkConnectivity = true;
+		Map<String,String> colours = new HashMap<String,String>();
+		colours.put(BASECOLOUR_FOR_PATHS, "22000000"); // opacity then bgr
+		colours.put(BASECOLOUR_FOR_STANDS, "55ff0000"); // opacity then bgr
+		colours.put(BASECOLOUR_FOR_TAXIWAYS, "550000ff"); // opacity then bgr
+		colours.put(BASECOLOUR_FOR_RUNWAYS, "5500ff00"); // opacity then bgr
+		colours.put(BASECOLOUR_FOR_NODES, "ff00ffff"); // opacity then bgr
+		colours.put(BASECOLOUR_FOR_STANDNODES, "ffff0000"); // opacity then bgr
+		colours.put(BACKGROUND_COLOUR, "ffffffff"); // opacity then bgr
 		
 		for (int i = 2; i < args.length; i++) {
 			String arg = args[i];
@@ -156,6 +179,29 @@ public class TaxiGen {
 			} else if (argLC.startsWith("-conn=")) {
 				String s = argLC.substring(6);
 				checkConnectivity = s.contains("y") || s.contains("t");
+			} else if (argLC.matches("^-c..?=")) {
+				String hex = argLC.substring(argLC.indexOf('='));
+				if ((hex.length() == 8) && (hex.matches("[0-9a-f]+"))) {
+					if (argLC.startsWith("-cp=")) {
+						colours.put(BASECOLOUR_FOR_PATHS, hex);
+					} else if (argLC.startsWith("-cs=")) {
+						colours.put(BASECOLOUR_FOR_STANDS, hex);
+					} else if (argLC.startsWith("-ct=")) {
+						colours.put(BASECOLOUR_FOR_TAXIWAYS, hex);
+					} else if (argLC.startsWith("-cr=")) {
+						colours.put(BASECOLOUR_FOR_RUNWAYS, hex);
+					} else if (argLC.startsWith("-cn=")) {
+						colours.put(BASECOLOUR_FOR_NODES, hex);
+					} else if (argLC.startsWith("-csn=")) {
+						colours.put(BASECOLOUR_FOR_STANDNODES, hex);
+					} else if (argLC.startsWith("-cbg=")) {
+						colours.put(BACKGROUND_COLOUR, hex);
+					} else {
+						System.err.println("Unknown colour option in " + arg);
+					}
+				} else {
+					System.err.println("Trouble parsing colour in " + arg);
+				}
 			} else {
 				System.err.println("Unknown parameter: " + arg);
 				System.exit(1);
@@ -189,7 +235,7 @@ public class TaxiGen {
 		
 		if (kmlFile != null) {
 			System.out.println("Writing KML:" + kmlFile);
-			tg.graphNodesAndEdgesToKML(kmlFile, !includeRunways);
+			tg.graphNodesAndEdgesToKML(kmlFile, !includeRunways, colours);
 		}
 		
 		System.out.println("All done.");
@@ -208,6 +254,13 @@ public class TaxiGen {
 		System.out.println(" -minDistance=n : when adding a node to a taxiway for a stand to attach to, if a node exists within this distance, attach to that instead (default=1)");
 		System.out.println(" -rw=y/n : include runways in outputs? y/n (default = y)");
 		System.out.println(" -conn=y/n : check graph connectivity? y/n (default = y)");
+		System.out.println(" -cp=oobbggrr : colour used for aircraft paths (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -cs=oobbggrr : colour used for stand edges (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -ct=oobbggrr : colour used for taxiway edges (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -cr=oobbggrr : colour used for runway edges (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -cn=oobbggrr : colour used for nodes (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -csn=oobbggrr : colour used for stand nodes (hex values for opacity, blue, green and red) default is 2255ee00");
+		System.out.println(" -cbg=oobbggrr : colour used for blank background (hex values for opacity, blue, green and red) default is 2255ee00");
 		System.out.println();
 	}
 	
@@ -537,11 +590,11 @@ public class TaxiGen {
 		}
 	}
 	
-	public void graphNodesAndEdgesToKML(String filename, boolean excludeRunways) {
+	public void graphNodesAndEdgesToKML(String filename, boolean excludeRunways, Map<String, String> colours) {
 		if (excludeRunways) {
-			graphNodesAndEdgesToKML(filename, allTaxiNodes, allTaxiEdges);
+			graphNodesAndEdgesToKML(filename, allTaxiNodes, allTaxiEdges, colours);
 		} else {
-			graphNodesAndEdgesToKML(filename, allNodes.values(), allEdges);
+			graphNodesAndEdgesToKML(filename, allNodes.values(), allEdges, colours);
 		}
 	}
 	
@@ -1052,30 +1105,30 @@ public class TaxiGen {
     	return new double[] {llRval.getLat(), llRval.getLng()};
     }
 	
-    private void graphNodesAndEdgesToKML(String filename, Collection<TaxiNode> nodes, Collection<TaxiEdge> edges) {
+    private void graphNodesAndEdgesToKML(String filename, Collection<TaxiNode> nodes, Collection<TaxiEdge> edges, Map<String, String> colours) {
 		final Kml kml = KmlFactory.createKml();
 		final Document document = kml.createAndSetDocument().withName(filename).withOpen(true);
 		final Document documentTaxiways = document.createAndAddDocument().withName(filename + "Taxiways").withOpen(true);
 		final Document documentNodes = document.createAndAddDocument().withName(filename + "Nodes").withOpen(true);
 
 		final Style styleOSM = documentNodes.createAndAddStyle().withId("placemarkStyle");
-		styleOSM.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor("ff00ffff").withScale(1);
+		styleOSM.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor(colours.get(BASECOLOUR_FOR_NODES)).withScale(1);
 		final Style styleOSMGates = documentNodes.createAndAddStyle().withId("placemarkStyleGates");
-		styleOSMGates.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor("ffff0000").withScale(1);
+		styleOSMGates.createAndSetIconStyle().withIcon(new Icon().withHref("http://www.google.com/mapfiles/marker.png")).withColor(colours.get(BASECOLOUR_FOR_STANDNODES)).withScale(1);
 		
 		final Style styleTaxiway = documentTaxiways.createAndAddStyle().withId("linestyleTaxiway");
 		styleTaxiway.createAndSetLineStyle()
-		.withColor("550000ff")
+		.withColor(colours.get(BASECOLOUR_FOR_TAXIWAYS))
 		.withWidth(4.0d);
 
 		final Style styleRunway = documentTaxiways.createAndAddStyle().withId("linestyleRunway");
 		styleRunway.createAndSetLineStyle()
-		.withColor("5500ff00")
+		.withColor(colours.get(BASECOLOUR_FOR_RUNWAYS))
 		.withWidth(4.0d);
 		
 		final Style styleTaxiwayToGate = documentTaxiways.createAndAddStyle().withId("linestyleTaxiwayToGate");
 		styleTaxiwayToGate.createAndSetLineStyle()
-		.withColor("55ff0000")
+		.withColor(colours.get(BASECOLOUR_FOR_STANDS))
 		.withWidth(4.0d);
 
 		for (TaxiEdge te : edges) {
@@ -1105,7 +1158,7 @@ public class TaxiGen {
 			p.createAndSetPoint().addToCoordinates(tn.getLonCoordinate(), tn.getLatCoordinate());
 		}
 		
-		KMLUtils.addGroundOverlayToKMLDocument(filename, document);
+		KMLUtils.addGroundOverlayToKMLDocument(filename, document, colours.get(BACKGROUND_COLOUR));
 		
 		try {
 			kml.marshal(new File(filename));
