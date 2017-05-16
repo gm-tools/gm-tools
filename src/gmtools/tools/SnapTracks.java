@@ -1,5 +1,26 @@
 package gmtools.tools;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import de.micromata.opengis.kml.v_2_2_0.Document;
+import de.micromata.opengis.kml.v_2_2_0.Icon;
+import de.micromata.opengis.kml.v_2_2_0.Kml;
+import de.micromata.opengis.kml.v_2_2_0.KmlFactory;
+import de.micromata.opengis.kml.v_2_2_0.LineString;
+import de.micromata.opengis.kml.v_2_2_0.Placemark;
+import de.micromata.opengis.kml.v_2_2_0.Style;
 import gmtools.common.ArrayTools;
 import gmtools.common.GroundMovementWriter;
 import gmtools.common.KMLUtils;
@@ -16,30 +37,7 @@ import gmtools.snaptracks.SnapTracksThread;
 import gmtools.snaptracks.SnapTracksThread.EdgeTime;
 import gmtools.snaptracks.SnapTracksThread.RouteTaken;
 import gmtools.snaptracks.SnapTracksThread.Snapping;
-
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Pattern;
-
 import uk.me.jstott.jcoord.LatLng;
-import de.micromata.opengis.kml.v_2_2_0.Document;
-import de.micromata.opengis.kml.v_2_2_0.Icon;
-import de.micromata.opengis.kml.v_2_2_0.Kml;
-import de.micromata.opengis.kml.v_2_2_0.KmlFactory;
-import de.micromata.opengis.kml.v_2_2_0.LineString;
-import de.micromata.opengis.kml.v_2_2_0.Placemark;
-import de.micromata.opengis.kml.v_2_2_0.Style;
 
 /**
  * copyright (c) 2014-2015 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
@@ -389,12 +387,17 @@ public class SnapTracks {
 				endFlight = allAircraft.size();
 			}
 			
-			this.aircraft = allAircraft.subList(startFlight, endFlight);
+			if (startFlight < allAircraft.size()) {
+				this.aircraft = allAircraft.subList(startFlight, endFlight);
+			} else {
+				this.aircraft = Collections.emptyList();
+			}
 		} else {
 			this.aircraft = allAircraft;
 		}
 		
-		System.out.println("Loaded " + aircraft.size() + " aircraft");
+		System.out.println("Revised bounds: start=" + startFlight + ", end=" + endFlight);
+		System.out.println("Loaded " + aircraft.size() + " tracks (of " + allAircraft.size() + " valid tracks in the file)");
 		
 		this.flightpaths = new LatLng[aircraft.size()][][];
 		this.aircraftRoutes = new List[aircraft.size()];
