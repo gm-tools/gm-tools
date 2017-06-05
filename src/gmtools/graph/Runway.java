@@ -27,6 +27,11 @@ public class Runway {
 	private List<Double> distances2; // distance that each node in entranceNodes2 is from start of runway
 	
 	public Runway(String name) {
+		if (!(name.contains("\\") || name.contains("/") || name.contains("-"))) {
+			System.err.println("Runway name '" + name + "' doesn't contain /, \\, or -");
+			throw new IllegalArgumentException();
+		}
+		
 		this.name = name;
 		String[] split = name.split("[/\\\\-]");
 		this.name1 = split[0].trim();

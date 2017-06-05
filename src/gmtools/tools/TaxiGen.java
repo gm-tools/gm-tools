@@ -113,7 +113,9 @@ public class TaxiGen {
 	 * -kml=filename.kml : a filename to write out KML for the taxiways for use in Google Earth
 	 * -spacing==n : number of metres between intermediate nodes on long taxiway edges (default=50); make negative to disable 
 	 * -minDistance=n : when adding a node to a taxiway for a stand to attach to, if a node exists within this distance, attach to that instead (default=1)
+	 * -nearest=y/n : if no 'nearest taxiway' is specified for a stand, add it to the nearest taxiway (default = n)
 	 * -rw=y/n : include runways in outputs? y/n (default = y)
+	 * -gn=y/n : add OSM gate nodes as stands, either connecting to the nearest taxiway, or the one specified in the "stands" text file (default = n)
 	 * -cp=oobbggrr : colour used for aircraft paths (hex values for opacity, blue, green and red) default is 2255ee00
 	 * -cs=oobbggrr : colour used for stand edges (hex values for opacity, blue, green and red) default is 2255ee00
 	 * -ct=oobbggrr : colour used for taxiway edges (hex values for opacity, blue, green and red) default is 2255ee00
@@ -138,6 +140,8 @@ public class TaxiGen {
 		String edgeAnglesFile = null;
 		String kmlFile = null;
 		boolean includeRunways = true;
+		boolean addGateNodesAsStands = false;
+		boolean addToNearestTaxiway = false;
 		double thresholdForSnapToNode = 1;
 		double spacingForIntermediates = 50;
 		boolean checkConnectivity = true;
@@ -176,6 +180,12 @@ public class TaxiGen {
 			} else if (argLC.startsWith("-rw=")) {
 				String s = argLC.substring(4);
 				includeRunways = s.contains("y") || s.contains("t");
+			} else if (argLC.startsWith("-gn=")) {
+				String s = argLC.substring(4);
+				addGateNodesAsStands = s.contains("y") || s.contains("t");
+			} else if (argLC.startsWith("-nearest=")) {
+				String s = argLC.substring(9);
+				addToNearestTaxiway = s.contains("y") || s.contains("t");
 			} else if (argLC.startsWith("-conn=")) {
 				String s = argLC.substring(6);
 				checkConnectivity = s.contains("y") || s.contains("t");
@@ -216,9 +226,16 @@ public class TaxiGen {
 		System.out.println((spacingForIntermediates >= 0) ? "Intermediates spaced at: " + spacingForIntermediates + "m" : "No intermediates");
 		System.out.println((thresholdForSnapToNode > 0) ? "Threshold for snap to existing nodes: " + thresholdForSnapToNode + "m" : "Not snapping to existing nodes");
 		System.out.println(includeRunways ? "Including runways in output" : "Excluding runways from output");
+		System.out.println(((addGateNodesAsStands) ? "NOT " : "") + "Adding OSM gate nodes as stands");
+		System.out.println(((addToNearestTaxiway) ? "NOT " : "") + "Adding stand nodes with no taxiway specified to nearest taxiway");
 		System.out.println("Now processing...");
 		
-		TaxiGen tg = new TaxiGen(standsDataFile, osmDataFile, thresholdForSnapToNode, spacingForIntermediates);
+		if (!new File(osmDataFile).exists()) {
+			System.err.println("OSM file not found: " + osmDataFile + ", quitting.");
+			System.exit(1);
+		}
+		
+		TaxiGen tg = new TaxiGen(standsDataFile, osmDataFile, thresholdForSnapToNode, spacingForIntermediates, addGateNodesAsStands, addToNearestTaxiway);
 		
 		if (checkConnectivity) {
 			tg.checkConnectivityDialogue("DebugConnectivity.kml");
@@ -254,6 +271,8 @@ public class TaxiGen {
 		System.out.println(" -minDistance=n : when adding a node to a taxiway for a stand to attach to, if a node exists within this distance, attach to that instead (default=1)");
 		System.out.println(" -rw=y/n : include runways in outputs? y/n (default = y)");
 		System.out.println(" -conn=y/n : check graph connectivity? y/n (default = y)");
+		System.out.println(" -nearest=y/n : if no 'nearest taxiway' is specified for a stand, add it to the nearest taxiway (default = n)");
+		System.out.println(" -gn=y/n : add OSM gate nodes as stands, either connecting to the nearest taxiway, or the one specified in the \"stands\" text file (default = n)");
 		System.out.println(" -cp=oobbggrr : colour used for aircraft paths (hex values for opacity, blue, green and red) default is 2255ee00");
 		System.out.println(" -cs=oobbggrr : colour used for stand edges (hex values for opacity, blue, green and red) default is 2255ee00");
 		System.out.println(" -ct=oobbggrr : colour used for taxiway edges (hex values for opacity, blue, green and red) default is 2255ee00");
@@ -265,7 +284,7 @@ public class TaxiGen {
 	}
 	
 	/** initialise taxiways object - load airport structure from OSM and NATS stand locations*/
-	public TaxiGen(String standsDataFile, String osmDataFile, double thresholdForSnapToNode, double spacingForIntermediates) {
+	public TaxiGen(String standsDataFile, String osmDataFile, double thresholdForSnapToNode, double spacingForIntermediates, boolean addGateNodesAsStands, boolean addToNearestTaxiway) {
 		this.thresholdForSnapToNode = thresholdForSnapToNode;
 		this.spacingForIntermediates = spacingForIntermediates;
 		
@@ -285,12 +304,25 @@ public class TaxiGen {
 		//the nodes from openstreetmap - covering runways and taxiways; indexed by node OSM ID
 		Map<String, TaxiNode> osmNodes = new TreeMap<String,TaxiNode>();
 		
+		Map<String, TaxiNode> gateNodesToAddAsStands = null;
+		if (addGateNodesAsStands) {
+			gateNodesToAddAsStands = new TreeMap<>();
+		}
+		
 		this.allEdges = new TreeSet<TaxiEdge>();
-		taxiways.putAll(loadNodesFromOSM(osmDataFile, osmNodes, allEdges, standsWithNoCoords));
+		taxiways.putAll(loadNodesFromOSM(osmDataFile, osmNodes, allEdges, standsWithNoCoords, gateNodesToAddAsStands));
 		
 		// load and create nodes for gates from NATS data
 		System.out.println("Adding NATS stands");
 		Map<String, TaxiNode> addedStandNodes = (stands != null) ? stands.getStandNodes() : null;
+		
+		if (gateNodesToAddAsStands != null) {
+			if (addedStandNodes == null) {
+				addedStandNodes = gateNodesToAddAsStands;
+			} else {
+				addedStandNodes.putAll(gateNodesToAddAsStands);
+			}
+		}
 		
 		// for each gate node, find all edges related to the taxiway it's connected to, and
 		// figure out the nearest point on each. Whichever is nearest overall, add an intersection node
@@ -299,7 +331,7 @@ public class TaxiGen {
 
 		// revised: have lots of intermediate nodes, and just look for the nearest one on the right taxiway
 		Map<String,TaxiNode> gateAdditionalNodes = new TreeMap<String,TaxiNode>(); // the set of any extra nodes added to the OSM data to allow for stand connections
-		if (stands != null) {
+		if (addedStandNodes != null) {
 			System.out.println("Adding nodes for added stands");
 			Set<TaxiNode> standNodesWithSpecificAttachments = new TreeSet<TaxiNode>(); // keep these until the end so we can pick up generated stand attachment nodes too 
 			for (TaxiNode tn : addedStandNodes.values()) {
@@ -319,6 +351,12 @@ public class TaxiGen {
 						} else {
 							System.out.println("Couldn't find taxiway " + tw + " for stand node " + tn);
 						}
+					}
+					
+					if (addToNearestTaxiway) {
+						Taxiway tw = findNearestTaxiway(taxiways.values(), tn);
+						System.out.println("Adding " + tn + " to nearest taxiway, " + tw.getName());
+						associatedTaxiways.add(tw);
 					}
 					
 					// find nearest node
@@ -702,7 +740,7 @@ public class TaxiGen {
 		for (int twi = 0; twi < taxiways.size(); twi++) { // loop over each taxiway associated with this stand
 			Taxiway tw = taxiways.get(twi);
 			
-			// otherwise, loop over all edges on the given taxiway, loop over to look for nearest (Euclidean distance)
+			// loop over all edges on the given taxiway, loop over to look for nearest (Euclidean distance)
 			minDistances[twi] = Double.POSITIVE_INFINITY;
 			for (TaxiEdge te : tw.getEdges()) {
 				// get nearest point on the edge
@@ -791,6 +829,59 @@ public class TaxiGen {
 				taxiways.get(i).replaceEdge(edgesToReplace[i], Arrays.asList(new TaxiEdge[]{te1, te2}));
 			}
 		}
+	} // end of findNearestEdgeOnTaxiways
+	
+	/**quite similar findNearestEdgeOnTaxiways but just looks at distances*/
+	private Taxiway findNearestTaxiway(Collection<Taxiway> allTaxiways, TaxiNode tn) {
+		Taxiway closestTaxiway = null;
+		double shortestDistance = Double.POSITIVE_INFINITY;
+		
+		for (Taxiway tw : allTaxiways) {
+			// loop over all edges on the given taxiway, loop over to look for nearest (Euclidean distance)
+			for (TaxiEdge te : tw.getEdges()) {
+				// get nearest point on the edge
+				double[] coords = nearestPointOnLine(tn.getLatCoordinate(), tn.getLonCoordinate(), te.getTnFrom().getLatCoordinate(), te.getTnFrom().getLonCoordinate(), te.getTnTo().getLatCoordinate(), te.getTnTo().getLonCoordinate());
+				// NB coords are lat,lon
+				
+				// if the intersection coords are beyond the end of an edge, just use the node at the end of the edge
+				// can just check one of the coordinates as it's a straight line
+				boolean beyondEndOfEdge = (coords[0] <= Math.min(te.getTnFrom().getLatCoordinate(), te.getTnTo().getLatCoordinate())) || (coords[0] >= Math.max(te.getTnFrom().getLatCoordinate(), te.getTnTo().getLatCoordinate()));
+				
+				double distance;
+				if (beyondEndOfEdge) {
+					// which node is closest?
+					double distance1 = Geography.distance(tn, te.getTnFrom());
+					double distance2 = Geography.distance(tn, te.getTnTo());
+					if (distance1 < distance2) {
+						distance = distance1;
+					} else {
+						distance = distance2;
+					}
+				} else {
+					// If on an edge, before we commit to checking whether to add a new node (breaking the edge in two), see if the end of the edge is pretty close.
+					// If it is, just connect to that.
+					double distanceFromPointToNode1 = Geography.distance(te.getTnFrom().getLatCoordinate(), te.getTnFrom().getLonCoordinate(), coords[0], coords[1]);
+					double distanceFromPointToNode2 = Geography.distance(te.getTnTo().getLatCoordinate(), te.getTnTo().getLonCoordinate(), coords[0], coords[1]);
+					
+					if (distanceFromPointToNode1 < thresholdForSnapToNode) {
+						distance = Geography.distance(tn, te.getTnFrom());
+						beyondEndOfEdge = true; // set this so we'll use the node rather than the edge
+					} else if (distanceFromPointToNode2 < thresholdForSnapToNode) {
+						distance = Geography.distance(tn, te.getTnTo());
+						beyondEndOfEdge = true; // set this so we'll use the node rather than the edge
+					} else {
+						distance = Geography.distance(tn.getLatCoordinate(), tn.getLonCoordinate(), coords[0], coords[1]);
+					}
+				}
+				
+				if (distance < shortestDistance) {
+					shortestDistance = distance;
+					closestTaxiway = tw;
+				}
+			}
+		}
+		
+		return closestTaxiway;
 	}
 	
 	/**
@@ -843,7 +934,7 @@ public class TaxiGen {
 		return rval; 
 	}
 	
-	private static Map<String, Taxiway> loadNodesFromOSM(String filename, Map<String, TaxiNode> nodeStore, Set<TaxiEdge> edgeStore, Set<String> specifiedStandNames) {
+	private static Map<String, Taxiway> loadNodesFromOSM(String filename, Map<String, TaxiNode> nodeStore, Set<TaxiEdge> edgeStore, Set<String> specifiedStandNames, Map<String, TaxiNode> addGateNodesAsStands) {
 		// somewhere to keep all the edges and nodes for each taxiway
 		Map<String, Taxiway> taxiways = new TreeMap<String, Taxiway>();
 		
@@ -1002,6 +1093,17 @@ public class TaxiGen {
 						}
 					}
 				}
+			}
+		}
+		
+		// now add all the "gate" nodes - if required
+		if (addGateNodesAsStands != null) {
+			Map<String, Node> gateNodes = posm.getGateNodes();
+			for (Entry<String, Node> e : gateNodes.entrySet()) {
+				Node n = e.getValue();
+				TaxiNode tn = new TaxiNode("N" + n.getId(), TaxiNode.NodeType.STAND, n.getLatitude(), n.getLongitude());
+				tn.setMeta(e.getKey());
+				addGateNodesAsStands.put(tn.getMeta(), tn);
 			}
 		}
 		

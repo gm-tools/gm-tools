@@ -33,12 +33,17 @@ public class GraphManipulation {
 				String name = te.getMeta();
 				
 				if ((name != null) && !name.isEmpty()) {
-					Runway runway = runways.get(name);
-					if (runway == null) {
-						runway = new Runway(name);
-						runways.put(name, runway);
+					try {
+						Runway runway = runways.get(name);
+						if (runway == null) {
+							runway = new Runway(name);
+							runways.put(name, runway);
+						}
+						runway.addEdge(te);
+					} catch (IllegalArgumentException e) {
+						// drop the "E" that was added to the edge ID for debugging
+						System.err.println("Problem when processing edge ID " + te.getId() + " (may have come from OPM Way ID " + te.getId().replace("E", "") + ")");
 					}
-					runway.addEdge(te);
 				}
 			}
 		}

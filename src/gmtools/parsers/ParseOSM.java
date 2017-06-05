@@ -35,6 +35,7 @@ public class ParseOSM {
 	public static final String TAG_VALUE_TAXIWAY = "taxiway";
 	public static final String TAG_VALUE_PARKPOS = "parking_position"; // sometimes used to mark stands rather than taxiway
 	public static final String TAG_VALUE_RUNWAY = "runway";
+	public static final String TAG_VALUE_GATE = "gate";
 
 	public static final String TAG_KEY_REF = "ref";
 	public static final String TAG_KEY_DISUSED = "disused";
@@ -50,11 +51,15 @@ public class ParseOSM {
 	
 	/**all the nodes in the OSM data, keyed by ID*/
 	private Map<Long, Node> nodes;
+	
+	/**sometimes nodes are marked as "gate" - we can join those to taxiways the same as other locations; here, these are keyed by gate name/number*/
+	private Map<String, Node> gateNodes;
 
 	public ParseOSM(String filename) {
 		waysPerNode = new TreeMap<Long, List<AeroWay>>();
 		ways = new TreeSet<AeroWay>();
 		nodes = new TreeMap<Long, Node>();
+		gateNodes = new TreeMap<String, Node>();
 		
 		File file = new File(filename); // the input file
 
@@ -64,6 +69,23 @@ public class ParseOSM {
 				if (entity instanceof Node) {
 					nodes.put(((Node)entity).getId(), (Node)entity);
 					//System.out.println("Node:" + entity);
+					
+					boolean isGate = false;
+					String name = null;
+					Collection<Tag> tags = entity.getTags();
+					for (Tag tag : tags) {
+						String tagValue = tag.getValue();
+						if (tag.getKey().equals(TAG_KEY_AEROWAY)) {
+							isGate |= tagValue.equals(TAG_VALUE_GATE);
+						}
+						if (tag.getKey().equals(TAG_KEY_REF)) {
+							name = tagValue.toUpperCase();
+						}
+					}
+					
+					if (isGate && (name != null)) {
+						gateNodes.put(name, (Node)entity);
+					}
 				} else if (entity instanceof Way) {
 					Collection<Tag> tags = entity.getTags();
 					boolean isTaxiway = false;
@@ -166,6 +188,11 @@ public class ParseOSM {
 	
 	public Node getNode(long nodeID) {
 		return nodes.get(nodeID);
+	}
+	
+	/**keyed by gate name/number*/
+	public Map<String, Node> getGateNodes() {
+		return gateNodes;
 	}
 	
 	/**
