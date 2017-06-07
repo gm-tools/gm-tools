@@ -1,21 +1,5 @@
 package gmtools.tools;
 
-import gmtools.common.Geography;
-import gmtools.common.GroundMovementWriter;
-import gmtools.common.KMLUtils;
-import gmtools.common.Legal;
-import gmtools.common.Maths;
-import gmtools.graph.GraphManipulation;
-import gmtools.graph.Runway;
-import gmtools.graph.Stands;
-import gmtools.graph.TaxiEdge;
-import gmtools.graph.TaxiNode;
-import gmtools.graph.TaxiNode.NodeType;
-import gmtools.graph.Taxiway;
-import gmtools.parsers.ParseOSM;
-import gmtools.parsers.ParseOSM.AeroWay;
-import gmtools.parsers.ParseOSM.AeroWay.Type;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -38,8 +22,6 @@ import org.jgrapht.graph.WeightedMultigraph;
 import org.openstreetmap.osmosis.core.domain.v0_6.Node;
 import org.openstreetmap.osmosis.core.domain.v0_6.WayNode;
 
-import uk.me.jstott.jcoord.LatLng;
-import uk.me.jstott.jcoord.UTMRef;
 import de.micromata.opengis.kml.v_2_2_0.Document;
 import de.micromata.opengis.kml.v_2_2_0.Icon;
 import de.micromata.opengis.kml.v_2_2_0.Kml;
@@ -47,6 +29,25 @@ import de.micromata.opengis.kml.v_2_2_0.KmlFactory;
 import de.micromata.opengis.kml.v_2_2_0.LineString;
 import de.micromata.opengis.kml.v_2_2_0.Placemark;
 import de.micromata.opengis.kml.v_2_2_0.Style;
+import gmtools.common.Geography;
+import gmtools.common.GroundMovementWriter;
+import gmtools.common.KMLUtils;
+import gmtools.common.Legal;
+import gmtools.common.Maths;
+import gmtools.graph.GraphManipulation;
+import gmtools.graph.Runway;
+import gmtools.graph.Stands;
+import gmtools.graph.TaxiEdge;
+import gmtools.graph.TaxiNode;
+import gmtools.graph.TaxiNode.NodeType;
+import gmtools.graph.Taxiway;
+import gmtools.parsers.ParseBGLXML;
+import gmtools.parsers.ParseOSM;
+import gmtools.parsers.ParseOSM.AeroWay;
+import gmtools.parsers.ParseOSM.AeroWay.Type;
+import gmtools.parsers.SpecifiedGateLocations.Stand;
+import uk.me.jstott.jcoord.LatLng;
+import uk.me.jstott.jcoord.UTMRef;
 
 /**
  * copyright (c) 2014-2015 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
@@ -116,6 +117,7 @@ public class TaxiGen {
 	 * -nearest=y/n : if no 'nearest taxiway' is specified for a stand, add it to the nearest taxiway (default = n)
 	 * -rw=y/n : include runways in outputs? y/n (default = y)
 	 * -gn=y/n : add OSM gate nodes as stands, either connecting to the nearest taxiway, or the one specified in the "stands" text file (default = n)
+	 * -bglxml=filename : if supplied, this will read stands from the specified bglxml file (ultimate goal will be to allow full parsing as alternative to OSM)
 	 * -cp=oobbggrr : colour used for aircraft paths (hex values for opacity, blue, green and red) default is 2255ee00
 	 * -cs=oobbggrr : colour used for stand edges (hex values for opacity, blue, green and red) default is 2255ee00
 	 * -ct=oobbggrr : colour used for taxiway edges (hex values for opacity, blue, green and red) default is 2255ee00
@@ -145,6 +147,7 @@ public class TaxiGen {
 		double thresholdForSnapToNode = 1;
 		double spacingForIntermediates = 50;
 		boolean checkConnectivity = true;
+		String bglxmlDataFile = null;
 		Map<String,String> colours = new HashMap<String,String>();
 		colours.put(BASECOLOUR_FOR_PATHS, "22000000"); // opacity then bgr
 		colours.put(BASECOLOUR_FOR_STANDS, "55ff0000"); // opacity then bgr
@@ -163,6 +166,8 @@ public class TaxiGen {
 				edgeAnglesFile = arg.substring(8);
 			} else if (argLC.startsWith("-kml=")) {
 				kmlFile = arg.substring(5);
+			} else if (argLC.startsWith("-bglxml=")) {
+				bglxmlDataFile = arg.substring(8);
 			} else if (argLC.startsWith("-spacing=")) {
 				try {
 					spacingForIntermediates = Double.parseDouble(arg.substring(9));
@@ -223,11 +228,12 @@ public class TaxiGen {
 		if (standsDataFile != null) System.out.println("Stands file: " + standsDataFile);
 		if (edgeAnglesFile != null) System.out.println("Edge angles file: " + edgeAnglesFile);
 		if (kmlFile != null) System.out.println("KML file: " + kmlFile);
+		if (bglxmlDataFile != null) System.out.println("BGLXML file: " + bglxmlDataFile);
 		System.out.println((spacingForIntermediates >= 0) ? "Intermediates spaced at: " + spacingForIntermediates + "m" : "No intermediates");
 		System.out.println((thresholdForSnapToNode > 0) ? "Threshold for snap to existing nodes: " + thresholdForSnapToNode + "m" : "Not snapping to existing nodes");
 		System.out.println(includeRunways ? "Including runways in output" : "Excluding runways from output");
-		System.out.println(((addGateNodesAsStands) ? "NOT " : "") + "Adding OSM gate nodes as stands");
-		System.out.println(((addToNearestTaxiway) ? "NOT " : "") + "Adding stand nodes with no taxiway specified to nearest taxiway");
+		System.out.println(((!addGateNodesAsStands) ? "NOT " : "") + "Adding OSM gate nodes as stands");
+		System.out.println(((!addToNearestTaxiway) ? "NOT " : "") + "Adding stand nodes with no taxiway specified to nearest taxiway");
 		System.out.println("Now processing...");
 		
 		if (!new File(osmDataFile).exists()) {
@@ -235,7 +241,7 @@ public class TaxiGen {
 			System.exit(1);
 		}
 		
-		TaxiGen tg = new TaxiGen(standsDataFile, osmDataFile, thresholdForSnapToNode, spacingForIntermediates, addGateNodesAsStands, addToNearestTaxiway);
+		TaxiGen tg = new TaxiGen(standsDataFile, osmDataFile, thresholdForSnapToNode, spacingForIntermediates, addGateNodesAsStands, addToNearestTaxiway, bglxmlDataFile);
 		
 		if (checkConnectivity) {
 			tg.checkConnectivityDialogue("DebugConnectivity.kml");
@@ -273,6 +279,7 @@ public class TaxiGen {
 		System.out.println(" -conn=y/n : check graph connectivity? y/n (default = y)");
 		System.out.println(" -nearest=y/n : if no 'nearest taxiway' is specified for a stand, add it to the nearest taxiway (default = n)");
 		System.out.println(" -gn=y/n : add OSM gate nodes as stands, either connecting to the nearest taxiway, or the one specified in the \"stands\" text file (default = n)");
+		System.out.println(" -bglxml=filename : if supplied, this will read stands from the specified bglxml file (ultimate goal will be to allow full parsing as alternative to OSM)");
 		System.out.println(" -cp=oobbggrr : colour used for aircraft paths (hex values for opacity, blue, green and red) default is 2255ee00");
 		System.out.println(" -cs=oobbggrr : colour used for stand edges (hex values for opacity, blue, green and red) default is 2255ee00");
 		System.out.println(" -ct=oobbggrr : colour used for taxiway edges (hex values for opacity, blue, green and red) default is 2255ee00");
@@ -284,7 +291,7 @@ public class TaxiGen {
 	}
 	
 	/** initialise taxiways object - load airport structure from OSM and NATS stand locations*/
-	public TaxiGen(String standsDataFile, String osmDataFile, double thresholdForSnapToNode, double spacingForIntermediates, boolean addGateNodesAsStands, boolean addToNearestTaxiway) {
+	public TaxiGen(String standsDataFile, String osmDataFile, double thresholdForSnapToNode, double spacingForIntermediates, boolean addGateNodesAsStands, boolean addToNearestTaxiway, String bglxmlDataFile) {
 		this.thresholdForSnapToNode = thresholdForSnapToNode;
 		this.spacingForIntermediates = spacingForIntermediates;
 		
@@ -296,7 +303,7 @@ public class TaxiGen {
 			System.out.println("Loading stand data");
 			stands = new Stands(standsDataFile);
 		}
-		Set<String> standsWithNoCoords = (stands != null) ? stands.getStandsWithNoCoords() : null;
+		Map<String, Stand> standsWithNoCoords = (stands != null) ? stands.getStandsWithNoCoords() : null;
 		
 		// create edges from OSM data
 		System.out.println("Loading OSM data");
@@ -310,7 +317,7 @@ public class TaxiGen {
 		}
 		
 		this.allEdges = new TreeSet<TaxiEdge>();
-		taxiways.putAll(loadNodesFromOSM(osmDataFile, osmNodes, allEdges, standsWithNoCoords, gateNodesToAddAsStands));
+		taxiways.putAll(loadNodesFromOSM(osmDataFile, osmNodes, allEdges, standsWithNoCoords.keySet(), gateNodesToAddAsStands));
 		
 		// load and create nodes for gates from NATS data
 		System.out.println("Adding NATS stands");
@@ -320,7 +327,16 @@ public class TaxiGen {
 			if (addedStandNodes == null) {
 				addedStandNodes = gateNodesToAddAsStands;
 			} else {
-				addedStandNodes.putAll(gateNodesToAddAsStands);
+				addedStandNodes.putAll(gateNodesToAddAsStands); // this erases the taxiway attachments!
+			}
+		}
+		
+		if (bglxmlDataFile != null) {
+			ParseBGLXML p = new ParseBGLXML(bglxmlDataFile);
+			if (addedStandNodes == null) {
+				addedStandNodes = p.getStandNodes();
+			} else {
+				addedStandNodes.putAll(p.getStandNodes());
 			}
 		}
 		
@@ -341,7 +357,8 @@ public class TaxiGen {
 					// which taxiways is the node associated with?
 					List<Taxiway> associatedTaxiways = new ArrayList<Taxiway>();
 					
-					if (tn.getAssociatedTaxiways().length == 0) {
+					Stand specifiedTaxiways = standsWithNoCoords.get(tn.getMeta());
+					if ((tn.getAssociatedTaxiways().length == 0) && ((specifiedTaxiways == null) || (specifiedTaxiways.getAssociatedTaxiways().length == 0))) {
 						System.out.println("No taxiways specified for stand node " + tn);
 					}
 					
@@ -353,10 +370,24 @@ public class TaxiGen {
 						}
 					}
 					
+					if (specifiedTaxiways != null) {
+						for (String s : specifiedTaxiways.getAssociatedTaxiways()) {
+							if (taxiways.containsKey(s.toUpperCase())) {
+								associatedTaxiways.add(taxiways.get(s.toUpperCase()));
+							} else {
+								System.out.println("Couldn't find taxiway " + s + " for stand node " + tn);
+							}
+						}
+					}
+					
 					if (addToNearestTaxiway) {
 						Taxiway tw = findNearestTaxiway(taxiways.values(), tn);
-						System.out.println("Adding " + tn + " to nearest taxiway, " + tw.getName());
-						associatedTaxiways.add(tw);
+						if (tw != null) {
+							System.out.println("Adding " + tn + " to nearest taxiway, " + tw.getName());
+							associatedTaxiways.add(tw);
+						} else {
+							System.out.println("Couldn't find a taxiway for stand node " + tn);
+						}
 					}
 					
 					// find nearest node

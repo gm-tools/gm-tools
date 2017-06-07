@@ -45,26 +45,29 @@ public class SpecifiedGateLocations {
 				Integer taxiwayIndex = columnIndices.getColumnIndex(HEADER_TAXIWAY, false);
 				Integer attachmentIndex = columnIndices.getColumnIndex(HEADER_ATTACHMENT, false);
 				
+				double[] dblCoords = {Double.NaN, Double.NaN};
 				if ((latIndex != null) && (lonIndex != null) && (Math.max(latIndex, lonIndex) < cols.length)) { // at least name, lat, lon
-					String location = ((locationIndex != null) && (locationIndex < cols.length)) ? cols[locationIndex] : null;
-					double[] dblCoords = Geography.latLonToDecimal(cols[latIndex].trim(), cols[lonIndex].trim());
+					dblCoords = Geography.latLonToDecimal(cols[latIndex].trim(), cols[lonIndex].trim());
 
 					// -1 * y coord, because lat is up as values increase, whereas screen is down as values increase
-					Stand s = new Stand(label, location, dblCoords[0], dblCoords[1]);
-					stands.add(s);
-					
-					if ((taxiwayIndex != null) && (taxiwayIndex < cols.length)) {
-						String[] taxiways = cols[taxiwayIndex].split(SEPARATOR_TAXIWAYS);
-						s.associatedTaxiways = taxiways;
-					}
-					
-					if ((attachmentIndex != null) && (attachmentIndex < cols.length)) {
-						s.nodeAttachment = cols[attachmentIndex];
-					}
-				} else { // just use the name
-					Stand s = new Stand(label);
-					stands.add(s);
+					//Stand s = new Stand(label, location, dblCoords[0], dblCoords[1]);
+					//stands.add(s);
 				}
+				
+				String location = ((locationIndex != null) && (locationIndex < cols.length)) ? cols[locationIndex] : null;
+				
+				Stand s = new Stand(label, location, dblCoords[0], dblCoords[1]);
+				
+				if ((taxiwayIndex != null) && (taxiwayIndex < cols.length)) {
+					String[] taxiways = cols[taxiwayIndex].split(SEPARATOR_TAXIWAYS);
+					s.associatedTaxiways = taxiways;
+				}
+				
+				if ((attachmentIndex != null) && (attachmentIndex < cols.length)) {
+					s.nodeAttachment = cols[attachmentIndex];
+				}
+				
+				stands.add(s);
 			}
 			
 			in.close();
@@ -96,17 +99,7 @@ public class SpecifiedGateLocations {
 			this.location = location;
 			this.lat = lat;
 			this.lon = lon;
-			this.hasCoords = true;
-			this.associatedTaxiways = new String[0];
-			this.nodeAttachment = null;
-		}
-		
-		public Stand(String name) {
-			this.name = name;
-			this.location = null;
-			this.lat = Double.NaN;
-			this.lon = Double.NaN;
-			this.hasCoords = false;
+			this.hasCoords = !(Double.isNaN(lat) || Double.isNaN(lon));
 			this.associatedTaxiways = new String[0];
 			this.nodeAttachment = null;
 		}

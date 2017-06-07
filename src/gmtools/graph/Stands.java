@@ -1,13 +1,11 @@
 package gmtools.graph;
 
+import java.util.Map;
+import java.util.TreeMap;
+
 import gmtools.graph.TaxiNode.NodeType;
 import gmtools.parsers.SpecifiedGateLocations;
 import gmtools.parsers.SpecifiedGateLocations.Stand;
-
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.TreeSet;
 
 /**
  * copyright (c) 2014-2015 Alexander E.I. Brownlee (sbr@cs.stir.ac.uk)
@@ -17,11 +15,11 @@ import java.util.TreeSet;
  */
 public class Stands {
 	private Map<String, TaxiNode> standNodes = new TreeMap<String, TaxiNode>();
-	private Set<String> standsWithNoCoords;
+	private Map<String, Stand> standsWithNoCoords;
 	
 	public Stands(String filename) {
 		this.standNodes = new TreeMap<String, TaxiNode>();
-		this.standsWithNoCoords = new TreeSet<String>();
+		this.standsWithNoCoords = new TreeMap<String, Stand>();
 
 		for (Stand s : SpecifiedGateLocations.loadStandsFromFile(filename)) {
 			if (s.hasCoords()) {
@@ -31,7 +29,7 @@ public class Stands {
 				tn.setNodeAttachment(s.getNodeAttachment());
 				standNodes.put(s.getName(), tn);
 			} else {
-				standsWithNoCoords.add(s.getName());
+				standsWithNoCoords.put(s.getName(), s);
 			}
 		}
 	}
@@ -40,7 +38,7 @@ public class Stands {
 		return standNodes;
 	}
 	
-	public Set<String> getStandsWithNoCoords() {
+	public Map<String, Stand> getStandsWithNoCoords() {
 		return standsWithNoCoords;
 	}
 }

@@ -76,7 +76,7 @@ public class ParseOSM {
 					for (Tag tag : tags) {
 						String tagValue = tag.getValue();
 						if (tag.getKey().equals(TAG_KEY_AEROWAY)) {
-							isGate |= tagValue.equals(TAG_VALUE_GATE);
+							isGate |= tagValue.equals(TAG_VALUE_GATE) || tagValue.equals(TAG_VALUE_PARKPOS);
 						}
 						if (tag.getKey().equals(TAG_KEY_REF)) {
 							name = tagValue.toUpperCase();
@@ -160,6 +160,8 @@ public class ParseOSM {
 			} else {
 				reader = new XmlReader(file, false, compression);
 			}
+		} catch (org.openstreetmap.osmosis.core.OsmosisRuntimeException e) {
+			System.err.println("Problem parsing OSM data: " + e.toString() + ", " + e.getMessage());
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
