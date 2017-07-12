@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -99,6 +100,7 @@ public class SnapTracksThread extends Thread {
 	private PrintStream timesOut;
 	
 	// alg params
+	private int maxHopsForStage2PathReduction;
 	private int kForStage2PathReduction;
 	private double snapDistanceM;
 	
@@ -130,7 +132,7 @@ public class SnapTracksThread extends Thread {
 		this.timesOut = timesOut;
 		
 		this.indicesToProcess = indicesToProcess;
-		
+		this.maxHopsForStage2PathReduction = Integer.MAX_VALUE;
 		this.kForStage2PathReduction = 10;
 		this.snapDistanceM = snapDistanceM;
 	}
@@ -324,6 +326,7 @@ public class SnapTracksThread extends Thread {
 	 * TODO - writing out of snapped tracks as we go should be much cleaner, to allow for a "resume" function if we fail part-way through
 	 * (can't easily write GM file as we go because it needs routes and aircraft written to different places) 
 	 */
+	@SuppressWarnings("unchecked")
 	public RouteTaken snapRouteToGraph(List<TimeCoordinate> track, boolean harsh, int aircraftNumberForOutput) {
 		boolean localDebug = SnapTracks.GLOBAL_DEBUG_SNAPPING; // enable to output KML and debugging data after each step
 
@@ -501,7 +504,7 @@ public class SnapTracksThread extends Thread {
 		} else {
 			// is an index at the end of the route? if so, use that
 			for (Entry<String, Set<Integer>> e : indicesWithSingleStands.entrySet()) {
-				if (e.getValue().contains(0) || e.getValue().contains(snaps.size())) {
+				if (e.getValue().contains(0) || e.getValue().contains(snaps.size() - 1)) {
 					chosenStandName = e.getKey();
 				}
 			}
@@ -585,9 +588,9 @@ public class SnapTracksThread extends Thread {
 				// if these are the same edge, or adjacent, the path between is somewhat meaningless, so don't bother
 				if (!((leftEdge == rightEdge) || leftEdge.isAdjacentTo(rightEdge))) {
 					// work out the two closest nodes of the four represented by the edges 
-					TaxiNode[] leftRightNodes = getNodePair(graph, leftEdge, rightEdge, true);
+					Object[] leftRightNodes = getNodePair(graph, leftEdge, rightEdge, true);
 					
-					if ((leftRightNodes[0] == null) || (leftRightNodes[1] == null)) {
+					if ((leftRightNodes[0] == null) || (leftRightNodes[1] == null) || (leftRightNodes[2] == null)) {
 						// if we get here, it's because we found an edge not connected to the rest of the graph
 						// issue a warning and continue
 						printlnSafelyToSystemOut("Warning: couldn't find a route between edges " + leftEdge.getId() + " and " + rightEdge.getId());
@@ -599,7 +602,11 @@ public class SnapTracksThread extends Thread {
 					}
 					
 					// get set of paths between the closest nodes
-					List<GraphPath<TaxiNode, TaxiEdge>> paths = getShortestsPathsBetween(leftRightNodes[0], leftRightNodes[1]);
+					List<GraphPath<TaxiNode, TaxiEdge>> paths = getShortestsPathsBetween((TaxiNode)leftRightNodes[0], (TaxiNode)leftRightNodes[1]);
+					if (paths.isEmpty()) {
+						printlnSafelyToSystemOut("Warning: couldn't find a route between edges " + leftEdge.getId() + " and " + rightEdge.getId() + ", constrained to the limit of maxHops=" + maxHopsForStage2PathReduction + ", using only the shortest path instead");
+						paths = Collections.singletonList((GraphPath<TaxiNode, TaxiEdge>)leftRightNodes[2]);
+					}
 					
 					// for each path, count the number of edges that would be kept if that was the path used
 					int maxEdgeCount = 0;
@@ -999,8 +1006,12 @@ public class SnapTracksThread extends Thread {
 		List<GraphPath<TaxiNode, TaxiEdge>> paths = pathsForTN0.get(tn1);
 		if (paths == null) {
 			if (SnapTracks.GLOBAL_DEBUG_SNAPPING_CACHE) printlnSafelyToSystemOut("kShortestPaths cache MISS " + tn0 + "--->" + tn1);
-			KShortestPaths<TaxiNode, TaxiEdge> ksp = new KShortestPaths<TaxiNode, TaxiEdge>(graph, tn0, kForStage2PathReduction);
+			KShortestPaths<TaxiNode, TaxiEdge> ksp = new KShortestPaths<TaxiNode, TaxiEdge>(graph, tn0, kForStage2PathReduction, maxHopsForStage2PathReduction);
 			paths = ksp.getPaths(tn1);
+			if (paths == null) { // no paths found: this can easily happen if we're limiting the length of the paths allowed using maxHops
+				paths = Collections.emptyList();
+			}
+			
 			pathsForTN0.put(tn1, paths);
 		} else {
 			if (SnapTracks.GLOBAL_DEBUG_SNAPPING_CACHE) printlnSafelyToSystemOut("kShortestPaths cache HIT " + tn0 + "--->" + tn1);
@@ -1247,11 +1258,13 @@ public class SnapTracksThread extends Thread {
 	/**
 	 * @return the pair of nodes belonging to the specified edges that are nearest or furthest apart.
 	 * These will be nulls if no connection could be found!
+	 * @return TaxiNode leftNode, TaxiNode rightNode, GraphPath<TaxiNode, TaxiEdge> shortestPath
 	 */
-	public static TaxiNode[] getNodePair(WeightedMultigraph<TaxiNode, TaxiEdge> graph, TaxiEdge leftEdge, TaxiEdge rightEdge, boolean nearest) {
+	public static Object[] getNodePair(WeightedMultigraph<TaxiNode, TaxiEdge> graph, TaxiEdge leftEdge, TaxiEdge rightEdge, boolean nearest) {
 		double best = nearest ? Double.POSITIVE_INFINITY : Double.NEGATIVE_INFINITY;
 		TaxiNode leftNode = null;
 		TaxiNode rightNode = null;
+		GraphPath<TaxiNode, TaxiEdge> shortestPath = null;
 		
 		DijkstraShortestPath<TaxiNode, TaxiEdge> dsp = new DijkstraShortestPath<TaxiNode, TaxiEdge>(graph, leftEdge.getTnFrom(), rightEdge.getTnFrom());
 		double length = dsp.getPathLength();
@@ -1259,6 +1272,7 @@ public class SnapTracksThread extends Thread {
 			leftNode = leftEdge.getTnFrom();
 			rightNode = rightEdge.getTnFrom();
 			best = length;
+			shortestPath = dsp.getPath();
 		}
 		
 		dsp = new DijkstraShortestPath<TaxiNode, TaxiEdge>(graph, leftEdge.getTnFrom(), rightEdge.getTnTo());
@@ -1267,6 +1281,7 @@ public class SnapTracksThread extends Thread {
 			leftNode = leftEdge.getTnFrom();
 			rightNode = rightEdge.getTnTo();
 			best = length;
+			shortestPath = dsp.getPath();
 		}
 		
 		dsp = new DijkstraShortestPath<TaxiNode, TaxiEdge>(graph, leftEdge.getTnTo(), rightEdge.getTnFrom());
@@ -1275,6 +1290,7 @@ public class SnapTracksThread extends Thread {
 			leftNode = leftEdge.getTnTo();
 			rightNode = rightEdge.getTnFrom();
 			best = length;
+			shortestPath = dsp.getPath();
 		}
 		
 		dsp = new DijkstraShortestPath<TaxiNode, TaxiEdge>(graph, leftEdge.getTnTo(), rightEdge.getTnTo());
@@ -1283,9 +1299,10 @@ public class SnapTracksThread extends Thread {
 			leftNode = leftEdge.getTnTo();
 			rightNode = rightEdge.getTnTo();
 			best = length;
+			shortestPath = dsp.getPath();
 		}
 		
-		return new TaxiNode[] {leftNode, rightNode};
+		return new Object[] {leftNode, rightNode, shortestPath};
 	}
 	
 	/**
@@ -1865,6 +1882,10 @@ public class SnapTracksThread extends Thread {
 	
 	public void setkForStage2PathReduction(int kForStage2PathReduction) {
 		this.kForStage2PathReduction = kForStage2PathReduction;
+	}
+	
+	public void setMaxHopsForStage2PathReduction(int maxHopsForStage2PathReduction) {
+		this.maxHopsForStage2PathReduction = maxHopsForStage2PathReduction;
 	}
 	
 	/** 

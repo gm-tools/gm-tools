@@ -139,6 +139,8 @@ public class SnapTracks {
 		boolean cleanTracks = true;
 		long breakTracksIfGapOverS = 30 * 60; // if there is a gap of more than this between points, split into two separate tracks (<0 to disable)
 		int min = 10;
+		int kForStage2PathReduction = 10; // default k (number of paths between two unambiguous points when cleaning the route)
+		int maxHopsForStage2PathReduction = Integer.MAX_VALUE; // (max length of paths between two unambiguous points when cleaning the route)
 		double snapDistanceM = 10;
 		String etdFile = null;
 		
@@ -192,6 +194,10 @@ public class SnapTracks {
 					breakTracksIfGapOverS = Long.parseLong(a.substring(3));
 				} else if (a.startsWith("-d=")) {
 					snapDistanceM = Double.parseDouble(a.substring(3));
+				} else if (a.startsWith("-k=")) { // experimental; undocumented as yet
+					kForStage2PathReduction = Integer.parseInt(a.substring(3));
+				} else if (a.startsWith("-maxHops=")) { // experimental; undocumented as yet
+					maxHopsForStage2PathReduction = Integer.parseInt(a.substring(9));
 				} else if (a.startsWith("-etd=")) {
 					snapping = false;
 					etdFile = a.substring(5);
@@ -240,6 +246,9 @@ public class SnapTracks {
 		System.out.println("  Min points near airport required to try snapping:" + min);
 		System.out.println("  Max distance for coord to snap to edge (m):" + snapDistanceM);
 		System.out.println("  Flight track files:" + ArrayTools.toString(flightTracksFiles, ","));
+		if ((kForStage2PathReduction != 10) || (maxHopsForStage2PathReduction != Integer.MAX_VALUE)) {
+			System.out.println("  k=" + kForStage2PathReduction + ",maxHops=" + maxHopsForStage2PathReduction);
+		}
 		System.out.println();
 		
 		String gmOutFile = filePrefix + "_withFlights.txt"; // name for output GM file
@@ -278,7 +287,7 @@ public class SnapTracks {
 		
 		// snap tracks
 		if (snapping) {
-			stm.loadAndSnapAircraft(flightTracksFilesAlreadySnapped, flightTracksFilesIncludedIntervals, "", allAircraft, latAirport, lonAirport, airportRadius, airportID, filePrefix, numberOfThreads, breakTracksIfGapOverS, startFlight, endFlight, stepWidthMetres, maxStepsOut, min, snapDistanceM);
+			stm.loadAndSnapAircraft(flightTracksFilesAlreadySnapped, flightTracksFilesIncludedIntervals, "", allAircraft, latAirport, lonAirport, airportRadius, airportID, filePrefix, numberOfThreads, breakTracksIfGapOverS, startFlight, endFlight, stepWidthMetres, maxStepsOut, min, snapDistanceM, kForStage2PathReduction, maxHopsForStage2PathReduction);
 		
 			// write out updated GM file
 			Map<RouteTaken, Integer> gmwIDsForACs = addSnappedFlightTracksToGMFile(gmw, at, stm.aircraft, stm.aircraftRoutes);
@@ -352,7 +361,7 @@ public class SnapTracks {
 	 * @param min - min number of points in a track (after cleaning) near airport before we'll try snapping
 	 */
 	@SuppressWarnings("unchecked")
-	private void loadAndSnapAircraft(boolean flightTracksFilesAlreadySnapped, boolean flightTracksFilesIncludedIntervals, String basedir, List<Aircraft> allAircraft, double latAirport, double lonAirport, double airportRadius, String airportID, String filePrefix, int numThreads, long breakTracksIfGapOverS, int startFlight, int endFlight, double stepWidthMetres, int maxStepsOut, int min, double snapDistanceM) {
+	private void loadAndSnapAircraft(boolean flightTracksFilesAlreadySnapped, boolean flightTracksFilesIncludedIntervals, String basedir, List<Aircraft> allAircraft, double latAirport, double lonAirport, double airportRadius, String airportID, String filePrefix, int numThreads, long breakTracksIfGapOverS, int startFlight, int endFlight, double stepWidthMetres, int maxStepsOut, int min, double snapDistanceM, int kForStage2PathReduction, int maxHopsForStage2PathReduction) {
 		System.out.println("Snapping flights");
 		
 		PrintStream snappedOut = null;
@@ -415,6 +424,8 @@ public class SnapTracks {
 		SnapTracksThread[] snapThreads = new SnapTracksThread[numThreads];
 		for (int i = 0; i < snapThreads.length; i++) {
 			snapThreads[i] = new SnapTracksThread(i, aircraft, indicesToProcess, taxiGen.getGraphWholeAirport(), flightpaths, aircraftRoutes, flightNames, flightTracksFilesIncludedIntervals, stepWidthMetres, maxStepsOut, snapDistanceM, taxiGen, edgeClusters, snappedOut, timesOut);
+			snapThreads[i].setkForStage2PathReduction(kForStage2PathReduction);
+			snapThreads[i].setMaxHopsForStage2PathReduction(maxHopsForStage2PathReduction);
 			snapThreads[i].start();
 		}
 		
