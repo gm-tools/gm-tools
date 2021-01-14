@@ -161,7 +161,7 @@ public class SnapTracksThread extends Thread {
 				newCoords.add(orgCoords.get(j).copyOf());
 			}
 			
-			// try snapoping just the raw coordinates
+			// try snapping just the raw coordinates
 			SnapTracksThread.RouteTaken routeTaken = snapRouteToGraph(newCoords, true, currentAircraft);
 			
 			// do we need to displace the coordinates?
