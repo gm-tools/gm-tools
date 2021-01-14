@@ -480,16 +480,11 @@ public class SnapTracks {
 	
 	/**@return GMW indices for Routes (not ACs, as each may have >1 route)*/
 	private static Map<RouteTaken,Integer> addSnappedFlightTracksToGMFile(GroundMovementWriter gmw, TaxiGen at, List<Aircraft> aircraft, List<RouteTaken>[] routes) {
-		System.out.println("adding to GM");		
-		
 		@SuppressWarnings("unchecked")
 		List<Integer>[] routeIDsPerAircraft = new List[aircraft.size()];
 		
 		int acNum = 0;
-		System.out.println(routes.length);
 		for (List<RouteTaken> routesForThisAC : routes) {
-			System.out.println("R:" + routeIDsPerAircraft + "====" + routesForThisAC.size());
-			
 			routeIDsPerAircraft[acNum] = new ArrayList<Integer>();
 			
 			if (routesForThisAC != null) {
