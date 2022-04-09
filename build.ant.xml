@@ -6,21 +6,21 @@
         <jar destfile="export/TaxiGen.jar">
             <manifest>
                 <attribute name="Main-Class" value="gmtools.tools.TaxiGen"/>
-                <attribute name="Class-Path" value=". lib/JavaAPIforKml.jar lib/jcoord-1.0.jar lib/jgraph.jar lib/jgrapht-jdk1.6.jar lib/osmosis-apidb-0.43.1.jar lib/osmosis-areafilter-0.43.1.jar lib/osmosis-core-0.43.1.jar lib/osmosis-dataset-0.43.1.jar lib/osmosis-extract-0.43.1.jar lib/osmosis-hstore-jdbc-0.43.1.jar lib/osmosis-osm-binary-0.43.1.jar lib/osmosis-pbf-0.43.1.jar lib/osmosis-pbf2-0.43.1.jar lib/osmosis-pgsimple-0.43.1.jar lib/osmosis-pgsnapshot-0.43.1.jar lib/osmosis-replication-0.43.1.jar lib/osmosis-replication-http-0.43.1.jar lib/osmosis-set-0.43.1.jar lib/osmosis-tagfilter-0.43.1.jar lib/osmosis-tagtransform-0.43.1.jar lib/osmosis-xml-0.43.1.jar lib/commons-compress-1.4.1.jar lib/jaxb-api.jar lib/jaxb-core.jar lib/jaxb-impl.jar lib/activation-1.1.1.jar"/>
+                <attribute name="Class-Path" value=". lib/JavaAPIforKml.jar lib/jcoord-1.0.jar lib/jgraph.jar lib/jgrapht-jdk1.6.jar lib/osmosis-apidb-0.43.1.jar lib/osmosis-areafilter-0.43.1.jar lib/osmosis-core-0.43.1.jar lib/osmosis-dataset-0.43.1.jar lib/osmosis-extract-0.43.1.jar lib/osmosis-hstore-jdbc-0.43.1.jar lib/osmosis-osm-binary-0.43.1.jar lib/osmosis-pbf-0.43.1.jar lib/osmosis-pbf2-0.43.1.jar lib/osmosis-pgsimple-0.43.1.jar lib/osmosis-pgsnapshot-0.43.1.jar lib/osmosis-replication-0.43.1.jar lib/osmosis-replication-http-0.43.1.jar lib/osmosis-set-0.43.1.jar lib/osmosis-tagfilter-0.43.1.jar lib/osmosis-tagtransform-0.43.1.jar lib/osmosis-xml-0.43.1.jar lib/commons-compress-1.4.1.jar lib/jaxb-api.jar lib/jaxb-core.jar lib/jaxb-impl.jar lib/activation-1.1.1.jar lib/JSON-java-20211205-v20200429-SNAPSHOT.jar"/>
             </manifest>
             <fileset dir="bin"/>
         </jar>
         <jar destfile="export/SnapTracks.jar">
             <manifest>
                 <attribute name="Main-Class" value="gmtools.tools.SnapTracks"/>
-                <attribute name="Class-Path" value=". lib/JavaAPIforKml.jar lib/jcoord-1.0.jar lib/jgraph.jar lib/jgrapht-jdk1.6.jar lib/osmosis-apidb-0.43.1.jar lib/osmosis-areafilter-0.43.1.jar lib/osmosis-core-0.43.1.jar lib/osmosis-dataset-0.43.1.jar lib/osmosis-extract-0.43.1.jar lib/osmosis-hstore-jdbc-0.43.1.jar lib/osmosis-osm-binary-0.43.1.jar lib/osmosis-pbf-0.43.1.jar lib/osmosis-pbf2-0.43.1.jar lib/osmosis-pgsimple-0.43.1.jar lib/osmosis-pgsnapshot-0.43.1.jar lib/osmosis-replication-0.43.1.jar lib/osmosis-replication-http-0.43.1.jar lib/osmosis-set-0.43.1.jar lib/osmosis-tagfilter-0.43.1.jar lib/osmosis-tagtransform-0.43.1.jar lib/osmosis-xml-0.43.1.jar lib/commons-compress-1.4.1.jar lib/jaxb-api.jar lib/jaxb-core.jar lib/jaxb-impl.jar lib/activation-1.1.1.jar"/>
+                <attribute name="Class-Path" value=". lib/JavaAPIforKml.jar lib/jcoord-1.0.jar lib/jgraph.jar lib/jgrapht-jdk1.6.jar lib/osmosis-apidb-0.43.1.jar lib/osmosis-areafilter-0.43.1.jar lib/osmosis-core-0.43.1.jar lib/osmosis-dataset-0.43.1.jar lib/osmosis-extract-0.43.1.jar lib/osmosis-hstore-jdbc-0.43.1.jar lib/osmosis-osm-binary-0.43.1.jar lib/osmosis-pbf-0.43.1.jar lib/osmosis-pbf2-0.43.1.jar lib/osmosis-pgsimple-0.43.1.jar lib/osmosis-pgsnapshot-0.43.1.jar lib/osmosis-replication-0.43.1.jar lib/osmosis-replication-http-0.43.1.jar lib/osmosis-set-0.43.1.jar lib/osmosis-tagfilter-0.43.1.jar lib/osmosis-tagtransform-0.43.1.jar lib/osmosis-xml-0.43.1.jar lib/commons-compress-1.4.1.jar lib/jaxb-api.jar lib/jaxb-core.jar lib/jaxb-impl.jar lib/activation-1.1.1.jar lib/JSON-java-20211205-v20200429-SNAPSHOT.jar"/>
             </manifest>
             <fileset dir="bin"/>
         </jar>
         <jar destfile="export/GM2KML.jar">
             <manifest>
                 <attribute name="Main-Class" value="gmtools.tools.GM2KML"/>
-                <attribute name="Class-Path" value=". lib/JavaAPIforKml.jar lib/jcoord-1.0.jar lib/jgraph.jar lib/jgrapht-jdk1.6.jar lib/osmosis-apidb-0.43.1.jar lib/osmosis-areafilter-0.43.1.jar lib/osmosis-core-0.43.1.jar lib/osmosis-dataset-0.43.1.jar lib/osmosis-extract-0.43.1.jar lib/osmosis-hstore-jdbc-0.43.1.jar lib/osmosis-osm-binary-0.43.1.jar lib/osmosis-pbf-0.43.1.jar lib/osmosis-pbf2-0.43.1.jar lib/osmosis-pgsimple-0.43.1.jar lib/osmosis-pgsnapshot-0.43.1.jar lib/osmosis-replication-0.43.1.jar lib/osmosis-replication-http-0.43.1.jar lib/osmosis-set-0.43.1.jar lib/osmosis-tagfilter-0.43.1.jar lib/osmosis-tagtransform-0.43.1.jar lib/osmosis-xml-0.43.1.jar lib/commons-compress-1.4.1.jar lib/jaxb-api.jar lib/jaxb-core.jar lib/jaxb-impl.jar lib/activation-1.1.1.jar"/>
+                <attribute name="Class-Path" value=". lib/JavaAPIforKml.jar lib/jcoord-1.0.jar lib/jgraph.jar lib/jgrapht-jdk1.6.jar lib/osmosis-apidb-0.43.1.jar lib/osmosis-areafilter-0.43.1.jar lib/osmosis-core-0.43.1.jar lib/osmosis-dataset-0.43.1.jar lib/osmosis-extract-0.43.1.jar lib/osmosis-hstore-jdbc-0.43.1.jar lib/osmosis-osm-binary-0.43.1.jar lib/osmosis-pbf-0.43.1.jar lib/osmosis-pbf2-0.43.1.jar lib/osmosis-pgsimple-0.43.1.jar lib/osmosis-pgsnapshot-0.43.1.jar lib/osmosis-replication-0.43.1.jar lib/osmosis-replication-http-0.43.1.jar lib/osmosis-set-0.43.1.jar lib/osmosis-tagfilter-0.43.1.jar lib/osmosis-tagtransform-0.43.1.jar lib/osmosis-xml-0.43.1.jar lib/commons-compress-1.4.1.jar lib/jaxb-api.jar lib/jaxb-core.jar lib/jaxb-impl.jar lib/activation-1.1.1.jar lib/JSON-java-20211205-v20200429-SNAPSHOT.jar"/>
             </manifest>
             <fileset dir="bin"/>
         </jar>
@@ -36,6 +36,7 @@
         <copy file="lib/osmosis-dataset-0.43.1.jar" todir="export/lib"/>
         <copy file="lib/osmosis-extract-0.43.1.jar" todir="export/lib"/>
         <copy file="lib/osmosis-hstore-jdbc-0.43.1.jar" todir="export/lib"/>
+    	<copy file="lib/JSON-java-20211205-v20200429-SNAPSHOT.jar" todir="export/lib"/>
         <copy file="lib/osmosis-osm-binary-0.43.1.jar" todir="export/lib"/>
         <copy file="lib/osmosis-pbf-0.43.1.jar" todir="export/lib"/>
         <copy file="lib/osmosis-pbf2-0.43.1.jar" todir="export/lib"/>
